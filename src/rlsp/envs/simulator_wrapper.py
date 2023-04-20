@@ -189,7 +189,9 @@ class SimulatorWrapper:
         for node, sfc_dict in state.traffic.items():
             for sfc, sf_dict in sfc_dict.items():
                 ingress_sf = state.sfcs[sfc][0]
-                ingress_traffic[self.node_map[node]] = sf_dict[ingress_sf] / self.simulator.duration
+                ingress_traffic[self.node_map[node]] = sf_dict[ingress_sf]
+        
+        ingress_traffic = np.clip(ingress_traffic / (np.max(ingress_traffic)+1e-3), 0, 1)
 
         nn_input_state = np.array([])
         if 'ingress_traffic' in self.observations_space:
