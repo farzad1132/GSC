@@ -30,6 +30,7 @@ class Simulator(SimulatorInterface):
         self.sfc_list = reader.get_sfc(service_functions_file)
         self.sf_list = reader.get_sf(service_functions_file, resource_functions_path)
         self.config = reader.get_config(config_file)
+        self.config["force_link_cap"] = self.config.get("force_link_cap", None)
         self.network, self.ing_nodes, self.eg_nodes = reader.read_network(self.network_file,
                                                                          force_link_cap=self.config["force_link_cap"])
         self.metrics = Metrics(self.network, self.sf_list)
