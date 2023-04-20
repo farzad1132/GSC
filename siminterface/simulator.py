@@ -27,10 +27,11 @@ class Simulator(SimulatorInterface):
         self.network_file = network_file
         self.test_dir = test_dir
         # init network, sfc, sf, and config files
-        self.network, self.ing_nodes, self.eg_nodes = reader.read_network(self.network_file)
         self.sfc_list = reader.get_sfc(service_functions_file)
         self.sf_list = reader.get_sf(service_functions_file, resource_functions_path)
         self.config = reader.get_config(config_file)
+        self.network, self.ing_nodes, self.eg_nodes = reader.read_network(self.network_file,
+                                                                         force_link_cap=self.config["force_link_cap"])
         self.metrics = Metrics(self.network, self.sf_list)
         # Assume result path is the path where network file is in.
         self.result_base_path = os.path.dirname(self.network_file)

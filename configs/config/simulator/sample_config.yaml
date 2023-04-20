@@ -11,3 +11,6 @@ deterministic_size: True
 run_duration: 100                  # default: 100
 
 ttl_choices: [100]
+
+# This parameter overwrites links capacity
+force_link_cap: 3

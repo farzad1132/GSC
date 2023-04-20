@@ -158,7 +158,7 @@ def shortest_paths(networkx_network):
     networkx_network.graph['shortest_paths'] = shortest_paths_with_delays
 
 
-def read_network(file, node_cap=None, link_cap=None):
+def read_network(file, node_cap=None, link_cap=None, force_link_cap: float = None):
     """
     Read the GraphML file and return list of nodes and edges.
     """
@@ -201,6 +201,8 @@ def read_network(file, node_cap=None, link_cap=None):
         if e[2].get("LinkFwdCap") is None:
             log.warning(f"Link {(e[0], e[1])} has no capacity defined. Using the default capacity {link_cap} instead.")
         # Setting a default delay of 3 incase no delay specified in GraphML file
+        if force_link_cap is not None:
+            link_fwd_cap = force_link_cap
         # and we are unable to set it based on Geo location
         delay = 3
         if link_delay is None:
