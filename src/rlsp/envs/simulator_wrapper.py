@@ -182,7 +182,7 @@ class SimulatorWrapper:
         for node in state.network["nodes"]:
             cap = node["resource"]
             usage = sum(state.network_stats["run_total_processed_traffic"][node['id']].values())
-            nodes_utilization[self.node_map[node['id']]] = usage /(cap * self.simulator.duration)
+            nodes_utilization[self.node_map[node['id']]] = usage/cap
         
         nodes_utilization = np.clip(nodes_utilization / (np.max(nodes_utilization)+1e-3), 0, 1)
 
