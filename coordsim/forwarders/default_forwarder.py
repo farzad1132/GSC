@@ -1,5 +1,9 @@
 import logging
+
 from coordsim.forwarders import BaseFlowForwarder
+from coordsim.network.flow import Flow
+from coordsim.simulation.simulatorparams import SimulatorParams
+
 # log = logging.getLogger(__name__)
 
 
@@ -7,14 +11,14 @@ class DefaultFlowForwarder(BaseFlowForwarder):
     """
     This is the default forwarder class. It takes the shortest path.
     """
-    def __init__(self, env, params):
+    def __init__(self, env, params: SimulatorParams):
         """
         docstring
         """
         self.env = env
         self.params = params
 
-    def forward_flow(self, flow, next_node):
+    def forward_flow(self, flow: Flow, next_node):
         """
         Calculates the path delays occurring when forwarding a node
         Path delays are calculated using the Shortest path
