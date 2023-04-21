@@ -176,15 +176,15 @@ class SimulatorWrapper:
             The translated state according to the observation space specification.
 
         """
-
-        # map network dictionary into node_load numpy array
-        node_load = self.env_limits.create_filled_node_load_array()
-        for node in state.network['nodes']:
-            if node['resource'] == 0:
-                # treat a node with 0 capacity as a fully loaded node
-                node_load[self.node_map[node['id']]] = 1
-            else:
-                node_load[self.node_map[node['id']]] = node['used_resources'] / node['resource']
+                
+        # Calculating average relative node utilization
+        nodes_utilization = np.array([0.0 for v in state.network['nodes']])
+        for node in state.network["nodes"]:
+            cap = node["resource"]
+            usage = sum(state.network_stats["run_total_processed_traffic"][node['id']].values())
+            nodes_utilization[self.node_map[node['id']]] = usage /(cap * self.simulator.duration)
+        
+        nodes_utilization = np.clip(nodes_utilization / (np.max(nodes_utilization)+1e-3), 0, 1)
 
         # normalized ingress traffic
         ingress_traffic = np.array([0.0 for v in state.network['nodes']])
@@ -199,7 +199,7 @@ class SimulatorWrapper:
         if 'ingress_traffic' in self.observations_space:
             nn_input_state = np.concatenate((nn_input_state, ingress_traffic,), axis=None)
         if 'node_load' in self.observations_space:
-            nn_input_state = np.concatenate((nn_input_state, node_load,), axis=None)
+            nn_input_state = np.concatenate((nn_input_state, nodes_utilization,), axis=None)
 
         # log RL state to file during testing. need instance check because it requires the simulator writer
         if isinstance(self.simulator, Simulator) and self.simulator.test_mode:
