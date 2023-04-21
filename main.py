@@ -106,7 +106,7 @@ def cli(agent_config, network, service, sim_config, episodes, seed, test, weight
 
 if __name__ == "__main__":
     agent_config = 'configs/config/agent/sample_agent.yaml'
-    network = 'configs/networks/abilene/abilene-in4-rand-cap0-2.graphml'
+    network = 'configs/networks/abilene/abilene-in4-rand-cap1-2.graphml'
     service = 'configs/service_functions/abc.yaml'
     sim_config = 'configs/config/simulator/sample_config.yaml'
     # sim_config = 'configs/config/simulator/det-mmp-arrival7-3_det-size0_dur100_no_traffic_prediction.yaml'
