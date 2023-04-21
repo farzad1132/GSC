@@ -227,7 +227,8 @@ def read_network(file, node_cap=None, link_cap=None, force_link_cap: float = Non
 
         # Adding the undirected edges for each link defined in the network.
         # delay = edge delay , cap = edge capacity
-        networkx_network.add_edge(source, target, delay=delay, cap=link_fwd_cap, remaining_cap=link_fwd_cap)
+        networkx_network.add_edge(source, target, delay=delay, cap=link_fwd_cap, remaining_cap=link_fwd_cap,
+                                  run_passed_traffic=0)
 
     # setting the weight property for each edge in the NetworkX Graph
     # weight attribute is used to find the shortest paths
@@ -254,3 +255,4 @@ def reset_cap(network):
         network.nodes[node]['available_sf'] = {}
     for edge in network.edges(data=True):
         edge[2]['remaining_cap'] = edge[2]['cap']
+        edge[2]["run_passed_traffic"] = 0

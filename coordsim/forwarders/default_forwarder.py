@@ -67,6 +67,10 @@ class DefaultFlowForwarder(BaseFlowForwarder):
                 if not deduct_resources:
                     # Not enough resources, flow dropped
                     return False
+                
+                # Update 'run_passed_traffic' metric for edges
+                self.params.update_passed_traffic(flow.dr, flow.current_node_id, next_hop)
+                
                 hop_delay = self.params.network.graph['shortest_paths'][(flow.current_node_id, next_hop)][1]
                 if next_hop == flow.egress_node_id and flow.forward_to_eg:
                     # TODO: Make sure this is correct

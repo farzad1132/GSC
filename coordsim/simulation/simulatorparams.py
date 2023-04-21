@@ -245,3 +245,13 @@ class SimulatorParams:
         # important: increment index!
         self.flow_list_idx[ing] += 1
         return inter_arrival_time, flow_dr, flow_size
+
+    def update_passed_traffic(self, dr: float, src: str, dst: str) -> None:
+        """
+            Updating 'run_passed_traffic' metric for edges
+        """
+
+        # TODO: The network is undirected, so this update will automatically be applied in
+        #       opposite direction (dst -> src). But, you have to update this code in case of
+        #       directed networks
+        self.network[src][dst]["run_passed_traffic"] += dr
