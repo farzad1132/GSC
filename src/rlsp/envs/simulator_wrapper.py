@@ -8,6 +8,7 @@ import numpy as np
 from spinterface import SimulatorAction, SimulatorState
 from siminterface.simulator import Simulator
 from src.rlsp.envs.action_norm_processor import ActionScheduleProcessor
+from src.rlsp.envs.environment_limits import EnvironmentLimits
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,8 @@ class SimulatorWrapper:
      this class awaits numpy arrays which are used in gym environments.
     """
 
-    def __init__(self, simulator, env_limits, observations_space=('ingress_traffic', 'node_load')):
+    def __init__(self, simulator: Simulator, env_limits: EnvironmentLimits,
+                observations_space=('ingress_traffic', 'node_load')):
         self.simulator = simulator
         self.env_limits = env_limits
         self.sfc_dict = {}

@@ -8,11 +8,11 @@ other parameters for the simulator.
 """
 import numpy as np
 import random
-
+from coordsim.metrics.metrics import Metrics
 
 class SimulatorParams:
-    def __init__(self, logger, network, ing_nodes, eg_nodes, sfc_list, sf_list, config, metrics, prediction=False,
-                 schedule=None, sf_placement=None):
+    def __init__(self, logger, network, ing_nodes, eg_nodes, sfc_list, sf_list, config, metrics: Metrics,
+                 prediction=False, schedule=None, sf_placement=None):
         self.logger = logger
         # NetworkX network object: DiGraph
         self.network = network
