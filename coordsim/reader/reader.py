@@ -1,12 +1,14 @@
-import networkx as nx
-from geopy.distance import distance as dist
-import numpy as np
+import csv
+import importlib
 import logging
-import yaml
 import math
 from collections import defaultdict
-import importlib
-import csv
+from typing import List
+
+import networkx as nx
+import numpy as np
+import yaml
+from geopy.distance import distance as dist
 
 log = logging.getLogger(__name__)
 
@@ -158,7 +160,8 @@ def shortest_paths(networkx_network):
     networkx_network.graph['shortest_paths'] = shortest_paths_with_delays
 
 
-def read_network(file, node_cap=None, link_cap=None, force_link_cap: float = None):
+def read_network(file, node_cap=None, link_cap=None, force_link_cap: float = None,
+                force_node_cap: List[float] = None):
     """
     Read the GraphML file and return list of nodes and edges.
     """
@@ -177,6 +180,8 @@ def read_network(file, node_cap=None, link_cap=None, force_link_cap: float = Non
         if cap is None:
             cap = node_cap
             log.warning("NodeCap not set in the GraphML file, now using default NodeCap for node: {}".format(n))
+        if force_node_cap is not None:
+            cap = np.random.randint(force_node_cap[0], force_node_cap[1])
         node_type = n[1].get("NodeType", "Normal")
         node_name = n[1].get("label", None)
         if cap is None:

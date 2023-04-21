@@ -1,20 +1,23 @@
 import logging
+import os
 import random
 import time
-import os
 from shutil import copyfile
-from coordsim.metrics.metrics import Metrics
-import coordsim.reader.reader as reader
-from coordsim.simulation.flowsimulator import FlowSimulator
-from coordsim.simulation.simulatorparams import SimulatorParams
+
 import numpy
 import simpy
-from spinterface import SimulatorAction, SimulatorInterface, SimulatorState
-from coordsim.writer.writer import ResultWriter
-from coordsim.trace_processor.trace_processor import TraceProcessor
+
+import coordsim.reader.reader as reader
 #from coordsim.traffic_predictor.traffic_predictor import TrafficPredictor
 #from coordsim.traffic_predictor.lstm_predictor import LSTM_Predictor
 from coordsim.controller import *
+from coordsim.metrics.metrics import Metrics
+from coordsim.reader.builders import network_builder
+from coordsim.simulation.flowsimulator import FlowSimulator
+from coordsim.simulation.simulatorparams import SimulatorParams
+from coordsim.trace_processor.trace_processor import TraceProcessor
+from coordsim.writer.writer import ResultWriter
+from spinterface import SimulatorAction, SimulatorInterface, SimulatorState
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +33,9 @@ class Simulator(SimulatorInterface):
         self.sfc_list = reader.get_sfc(service_functions_file)
         self.sf_list = reader.get_sf(service_functions_file, resource_functions_path)
         self.config = reader.get_config(config_file)
-        self.config["force_link_cap"] = self.config.get("force_link_cap", None)
-        self.network, self.ing_nodes, self.eg_nodes = reader.read_network(self.network_file,
-                                                                         force_link_cap=self.config["force_link_cap"])
+
+        self.network, self.ing_nodes, self.eg_nodes = network_builder(self.network_file, self.config)
+
         self.metrics = Metrics(self.network, self.sf_list)
         # Assume result path is the path where network file is in.
         self.result_base_path = os.path.dirname(self.network_file)
