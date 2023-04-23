@@ -12,14 +12,17 @@ https://github.com/rll/rllab/blob/master/docs/user/implement_env.rst
 import inspect
 import logging
 from typing import Tuple
+
 import gym
-from gym.utils import seeding
 import numpy as np
+from gym.utils import seeding
+
+from coordsim.reader.builders import network_builder
+from coordsim.reader.reader import get_sf, get_sfc, network_diameter
+from spinterface import SimulatorInterface, SimulatorState
 from src.rlsp.envs.environment_limits import EnvironmentLimits
 from src.rlsp.envs.simulator_wrapper import SimulatorWrapper
 from src.rlsp.utils.constants import SUPPORTED_OBJECTIVES
-from spinterface import SimulatorInterface, SimulatorState
-from coordsim.reader.reader import read_network, get_sfc, get_sf, network_diameter
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +54,7 @@ class GymEnv(gym.Env):
         self.np_random = np.random.RandomState()
         self.seed(seed)
 
-        self.network, _, _ = read_network(self.network_file)
+        self.network, _, _ = network_builder(self.network_file, self.simulator.config)
         self.network_diameter = network_diameter(self.network)
         self.sfc_list = get_sfc(service_file)
         self.sf_list = get_sf(service_file)
