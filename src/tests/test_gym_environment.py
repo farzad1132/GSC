@@ -3,7 +3,7 @@
 from unittest import TestCase
 
 import numpy as np
-import gym
+import gymnasium as gym
 # noinspection PyUnresolvedReferences
 import rlsp
 from rlsp.agents.main import get_config
@@ -22,7 +22,8 @@ class TestGymEnvironment(TestCase):
         env = gym.make('rlsp-env-v1', agent_config=config, simulator=simulator, network_file=NETWORK,
                        service_file=SERVICE)
         np.random.seed(123)
-        env.seed(123)
+        #env.seed(123)
+        env.reset(123)
 
     def test_step(self):
         config = get_config(AGENT_CONFIG)
@@ -30,8 +31,8 @@ class TestGymEnvironment(TestCase):
         env = gym.make('rlsp-env-v1', agent_config=config, simulator=simulator, network_file=NETWORK,
                        service_file=SERVICE)
         np.random.seed(123)
-        env.seed(123)
-        env.reset()
+        #env.seed(123)
+        env.reset(123)
         action = env.action_space.sample()
         env.step(action)
 

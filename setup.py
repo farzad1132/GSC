@@ -8,13 +8,14 @@ this_directory = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-
+# NOTE: For now, you have to use bleeding-edge version of stable baselines
+#       due to its support for gymnasium
 requirements = [
     'click',
     'numpy',
     'stable-baselines3[extra]',
     'cloudpickle',
-    'gym[atari]',
+    'gymnasium',
     'pandas',
     'h5py'
 ]

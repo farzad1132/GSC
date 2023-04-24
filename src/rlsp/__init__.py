@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from gym.envs.registration import register
+from gymnasium.envs.registration import register
 
 register(
     id='rlsp-env-v1',

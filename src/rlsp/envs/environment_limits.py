@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-from gym import spaces
+from gymnasium import spaces
 
 from coordsim.reader.reader import read_network, get_sfc
 
@@ -73,7 +73,7 @@ class EnvironmentLimits:
         node_load_size = self.MAX_NODE_COUNT
         shape = (self.observation_space_len * node_load_size,)
 
-        return spaces.Box(low=0, high=1, shape=shape)
+        return spaces.Box(low=0, high=1, shape=shape, dtype=np.float64)
 
     def create_filled_node_load_array(self, default=0.0) -> np.ndarray:
         """creates an array with shape and type of the node_load array.
