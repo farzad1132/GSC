@@ -59,8 +59,13 @@ class GymEnv(gym.Env):
         self.network_diameter = network_diameter(self.network)
         self.sfc_list = get_sfc(service_file)
         self.sf_list = get_sf(service_file)
-        self.env_limits = EnvironmentLimits(len(self.network.nodes), self.sfc_list,
-                                            len(agent_config['observation_space']))
+        self.env_limits = EnvironmentLimits(
+            num_nodes=len(self.network.nodes),
+            sfc_list=self.sfc_list,
+            node_obs_space_len=len(agent_config['observation_space']),
+            link_obs_space_len=len(agent_config["link_observation_space"]),
+            graph_mode=self.agent_config["graph_mode"]
+        )
         self.min_delay, self.max_delay = self.min_max_delay()
         self.action_space = self.env_limits.action_space
         self.observation_space = self.env_limits.observation_space
