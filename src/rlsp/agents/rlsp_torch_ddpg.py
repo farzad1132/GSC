@@ -2,7 +2,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch as th
-from gymnasium import spaces
+from gym import spaces
 from stable_baselines3 import DDPG
 from stable_baselines3.common.buffers import ReplayBuffer
 from stable_baselines3.common.callbacks import EvalCallback
@@ -338,7 +338,6 @@ class TorchDDPG:
     
     def create(self, env: GymEnv):
         env = Monitor(env, filename=self.agent_helper.config_dir)
-        n_actions = env.action_space.shape[-1]
 
         self.model = CustomDDPG(
             policy=self.policy_class,
@@ -358,8 +357,8 @@ class TorchDDPG:
             gamma=self.agent_helper.config['gamma'],
             tau=self.agent_helper.config['target_model_update'],
             action_noise=NormalActionNoise(
-                mean=self.agent_helper.config['rand_mu']*np.ones(n_actions),
-                sigma=self.agent_helper.config['rand_sigma']*np.ones(n_actions)
+                mean=self.agent_helper.config['rand_mu'],
+                sigma=self.agent_helper.config['rand_sigma']
             ),
             batch_size=100,
             buffer_size=self.agent_helper.config['mem_limit'],
@@ -369,8 +368,7 @@ class TorchDDPG:
             #learning_rate=linear_schedule(1e-3)
             learning_rate=1e-3,
             #learning_rate=exp_decay(init=1e-3, end=1e-4)
-            verbose=1,
-            seed=self.agent_helper.sim_seed
+            verbose=1
         )
     
     def train(self, episodes: int):

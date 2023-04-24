@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-from gymnasium import spaces
+from gym import spaces
 
 from coordsim.reader.reader import read_network, get_sfc
 
