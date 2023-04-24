@@ -3,10 +3,15 @@
 This module contains the SimulatorWrapper class.
 """
 import logging
+from copy import deepcopy
 from typing import Tuple
+
+import networkx as nx
 import numpy as np
-from spinterface import SimulatorAction, SimulatorState
+from torch_geometric.utils import from_networkx
+
 from siminterface.simulator import Simulator
+from spinterface import SimulatorAction, SimulatorState
 from src.rlsp.envs.action_norm_processor import ActionScheduleProcessor
 from src.rlsp.envs.environment_limits import EnvironmentLimits
 
@@ -22,7 +27,7 @@ class SimulatorWrapper:
     """
 
     def __init__(self, simulator: Simulator, env_limits: EnvironmentLimits,
-                observations_space=('ingress_traffic', 'node_load')):
+                graph_mode: bool, observations_space=('ingress_traffic', 'node_load')):
         self.simulator = simulator
         self.env_limits = env_limits
         self.sfc_dict = {}
@@ -30,6 +35,7 @@ class SimulatorWrapper:
         self.sfc_map = {}
         self.sf_map = {}
         self.observations_space = observations_space
+        self.graph_mode = graph_mode
 
     def init(self, seed) -> Tuple[object, SimulatorState]:
         """Creates a new simulation environment.
@@ -77,7 +83,8 @@ class SimulatorWrapper:
             self.sf_map[service_function] = sf_index
             sf_index = sf_index + 1
 
-        return self._parse_state(init_state), init_state
+        obs = self._parse_state_as_graph(init_state) if self.graph_mode else self._parse_state(init_state)
+        return obs, init_state
 
     def add_placement_recursive(self, source_node, sf_id, sfc, schedule, placement):
         """
@@ -159,7 +166,9 @@ class SimulatorWrapper:
         simulator_action = SimulatorAction(placement_dict, scheduling_dict)
         state = self.simulator.apply(simulator_action)
 
-        return self._parse_state(state), state
+        obs = self._parse_state_as_graph(state) if self.graph_mode else self._parse_state(state)
+
+        return obs, state
 
     def _parse_state(self, state: SimulatorState) -> np.ndarray:
         """Formats the SimulationState as an observation space object
@@ -208,6 +217,56 @@ class SimulatorWrapper:
 
         return nn_input_state
 
+    def _parse_state_as_graph(self, state):
+        """
+            This method parses SimulatorState to GraphState
+        """
+
+        # Making a copy from simulator's network object, so to not interfere with simulator job
+        net: nx.Graph = deepcopy(self.simulator.network)
+        
+        # Deleting dict attributes (We don't need them in our GraphState)
+        for (_,d) in net.nodes(data=True):
+            del d["available_sf"]
+        del net.graph["shortest_paths"]
+
+        group_node_attrs = []
+
+        # Adding `ingress_traffic` attribute to nodes
+        if 'ingress_traffic' in self.observations_space:
+            group_node_attrs.append("ingress_traffic")
+            ingress_traffic = np.array([0.0 for v in state.network['nodes']])
+            for node, sfc_dict in state.traffic.items():
+                for sfc, sf_dict in sfc_dict.items():
+                    ingress_sf = state.sfcs[sfc][0]
+                    ingress_traffic[self.node_map[node]] = sf_dict[ingress_sf]
+            
+            ingress_traffic = np.clip(ingress_traffic / (np.max(ingress_traffic)+1e-3), 0, 1)
+
+            for (node, d) in net.nodes(data=True):
+                d["ingress_traffic"] = ingress_traffic[self.node_map[node]]
+        
+        # Adding `node_load` attribute to nodes
+        if 'node_load' in self.observations_space:
+            group_node_attrs.append("node_load")
+            nodes_utilization = np.array([0.0 for v in state.network['nodes']])
+            for node in state.network["nodes"]:
+                cap = node["resource"]
+                usage = sum(state.network_stats["run_total_processed_traffic"][node['id']].values())
+                nodes_utilization[self.node_map[node['id']]] = usage/cap
+            
+            nodes_utilization = np.clip(nodes_utilization / (np.max(nodes_utilization)+1e-3), 0, 1)
+
+            for (node, d) in net.nodes(data=True):
+                d["node_load"] = nodes_utilization[self.node_map[node]]
+
+        # Using pytorch_geometric utility to convert networkx's Graph to pytorch_geometric's Data
+        data = from_networkx(net,
+                            group_node_attrs=group_node_attrs,
+                            group_edge_attrs=None)
+        
+        return data
+    
     def permute_node_order(self, state, perm=None):
         """
         Apply random permutation to given vectorized state to shuffle order of nodes within state, eg, node load.
