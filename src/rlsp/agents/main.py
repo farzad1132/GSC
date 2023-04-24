@@ -14,8 +14,8 @@ from src.rlsp.agents.agent_helper import AgentHelper
 #from rlsp.agents.rlsp_ddpg import DDPG
 from src.rlsp.envs.gym_env import GymEnv
 #from src.rlsp.agents.rlsp_sac import SAC_Agent
-import gym
-from gym.utils.env_checker import check_env
+import gymnasium as gym
+from gymnasium.utils.env_checker import check_env
 import numpy as np
 import torch
 import pandas as pd

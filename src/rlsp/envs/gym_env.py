@@ -13,9 +13,9 @@ import inspect
 import logging
 from typing import Tuple
 
-import gym
+import gymnasium as gym
 import numpy as np
-from gym.utils import seeding
+from gymnasium.utils import seeding
 
 from coordsim.reader.builders import network_builder
 from coordsim.reader.reader import get_sf, get_sfc, network_diameter
@@ -35,9 +35,10 @@ class GymEnv(gym.Env):
     simulator: SimulatorInterface = ...
     simulator_wrapper: SimulatorWrapper = ...
 
-    metadata = {'render.modes': ['human']}
+    metadata = {'render_modes': ['human']}
 
-    def __init__(self, agent_config, simulator, network_file, service_file, seed=None, sim_seed=None):
+    def __init__(self, agent_config, simulator, network_file, service_file, seed=None, sim_seed=None,
+                 render_mode: str = None):
 
         self.network_file = network_file
         self.agent_config = agent_config
@@ -45,14 +46,14 @@ class GymEnv(gym.Env):
         self.sim_seed = sim_seed
         self.simulator_wrapper = None
         self.current_simulator_state = None
+        if render_mode is not None:
+            assert render_mode in self.metadata["render_modes"], "Invalid render_mode"
+        self.render_mode = render_mode
 
         self.last_succ_flow = 0
         self.last_drop_flow = 0
         self.last_gen_flow = 0
         self.run_count = 0
-
-        self.np_random = np.random.RandomState()
-        self.seed(seed)
 
         self.network, _, _ = network_builder(self.network_file, self.simulator.config)
         self.network_diameter = network_diameter(self.network)
@@ -96,7 +97,7 @@ class GymEnv(gym.Env):
         logger.info(f"min_delay: {min_delay}, max_delay: {max_delay}, diameter: {self.network_diameter}")
         return min_delay, max_delay
 
-    def reset(self):
+    def reset(self, seed: int = None, **kwargs):
         """
         Resets the state of the envs, returning an initial observation.
         Outputs
@@ -105,14 +106,18 @@ class GymEnv(gym.Env):
         (Initial reward is assumed to be 0.)
 
         """
+        if seed is None:
+            if self.sim_seed is not None:
+                seed = self.sim_seed
+            else:
+                seed = self.np_random.integers(0, 10000, dtype=int)
 
-        if self.sim_seed is None:
-            simulator_seed = self.np_random.randint(0, np.iinfo(np.int32).max, dtype=np.int32)
-        else:
-            simulator_seed = self.sim_seed
-        logger.debug(f"Simulator seed is {simulator_seed}")
+        super().reset(seed=seed)
+
+        logger.debug(f"Simulator seed is {seed}")
         self.simulator_wrapper = SimulatorWrapper(self.simulator, self.env_limits,
-                                                  self.agent_config['observation_space'])
+                                                    self.agent_config["graph_mode"],
+                                                    self.agent_config['observation_space'])
 
         self.last_succ_flow = 0
         self.last_drop_flow = 0
@@ -123,14 +128,14 @@ class GymEnv(gym.Env):
         # self.ewma_delay = self.network_diameter
 
         # to get initial state and instantiate
-        vectorized_state, self.current_simulator_state = self.simulator_wrapper.init(simulator_seed)
+        obs, self.current_simulator_state = self.simulator_wrapper.init(seed)
 
         # permute state and save permutation for reversing action later
         if self.agent_config['shuffle_nodes']:
-            vectorized_state, permutation = self.simulator_wrapper.permute_node_order(vectorized_state)
+            obs, permutation = self.simulator_wrapper.permute_node_order(obs)
             self.permutation = permutation
 
-        return vectorized_state
+        return obs, {}
 
     def seed(self, seed=None):
         """Sets the seed for this env's random number generator(s).
@@ -177,19 +182,19 @@ class GymEnv(gym.Env):
             self.permutation = None
 
         # apply reversed action, calculate reward
-        vectorized_state, self.current_simulator_state = self.simulator_wrapper.apply(action)
+        obs, self.current_simulator_state = self.simulator_wrapper.apply(action)
         reward = self.calculate_reward(self.current_simulator_state)
 
         # then shuffle new state again and save new permutation
         if self.agent_config['shuffle_nodes']:
-            vectorized_state, permutation = self.simulator_wrapper.permute_node_order(vectorized_state)
+            obs, permutation = self.simulator_wrapper.permute_node_order(obs)
             self.permutation = permutation
         if self.run_count == self.agent_config['episode_steps']:
             done = True
             self.run_count = 0
 
-        logger.debug(f"NN input (observation): {vectorized_state}")
-        return vectorized_state, reward, done, {}
+        logger.debug(f"NN input (observation): {obs}")
+        return obs, reward, done, False, {}
 
     def render(self, mode='cli'):
         """Renders the envs.
