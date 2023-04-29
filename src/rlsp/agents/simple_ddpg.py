@@ -9,7 +9,6 @@ from distutils.util import strtobool
 
 import gym
 import numpy as np
-#import pybullet_envs  # noqa
 import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,10 +16,10 @@ import torch.optim as optim
 import wandb
 from stable_baselines3.common.buffers import ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 from src.rlsp.agents.agent_helper import AgentHelper
 from src.rlsp.agents.main import create_environment
-from tqdm import tqdm
 
 
 class AutoResetWithSeed(gym.wrappers.AutoResetWrapper):
@@ -55,7 +54,6 @@ class QNetwork(nn.Module):
         super().__init__()
         self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod() \
                              + np.prod(env.single_action_space.shape), 64)
-        #self.fc2 = nn.Linear(256, 256)
         self.fc2 = nn.Linear(64, 1)
 
 
@@ -63,7 +61,6 @@ class QNetwork(nn.Module):
         x = th.cat([x, a], 1)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
-        #x = self.fc3(x)
         return x
 
 
@@ -71,31 +68,39 @@ class Actor(nn.Module):
     def __init__(self, env, num_nodes: int, num_sfs: int):
         super().__init__()
         self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod(), 128)
-        #self.fc2 = nn.Linear(256, 256)
         self.fc_mu = nn.Linear(128, np.prod(env.single_action_space.shape))
         self.before_softmax = nn.Sequential(self.fc1, nn.ReLU(), self.fc_mu)
-
-
-        # action rescaling
-        self.register_buffer(
-            "action_scale", th.tensor((env.single_action_space.high - env.single_action_space.low) / 2.0, dtype=th.float32)
-        )
-        self.register_buffer(
-            "action_bias", th.tensor((env.single_action_space.high + env.single_action_space.low) / 2.0, dtype=th.float32)
-        )
+        self.low = env.unwrapped.action_space.low
+        self.high = env.unwrapped.action_space.high
 
         self.num_nodes = num_nodes
         self.num_softmax = self.num_nodes*num_sfs
         self.softmax_layers = [nn.Softmax(1) for _ in range(self.num_softmax)]
+    
+    def scale_action(self, action: np.ndarray) -> np.ndarray:
+        """
+        Rescale the action from [low, high] to [-1, 1]
+        (no need for symmetric action space)
+
+        :param action: Action to scale
+        :return: Scaled action
+        """
+        return 2.0 * ((action - self.low) / (self.high - self.low)) - 1.0
+
+    def unscale_action(self, scaled_action: np.ndarray) -> np.ndarray:
+        """
+        Rescale the action from [-1, 1] to [low, high]
+        (no need for symmetric action space)
+
+        :param scaled_action: Action to un-scale
+        """
+        return self.low + (0.5 * (scaled_action + 1.0) * (self.high - self.low))
 
     def forward(self, x):
-        """ x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = torch.tanh(self.fc_mu(x)) """
         x = self.before_softmax(x)
         y = [self.softmax_layers[i](x[:, i*self.num_nodes:(i+1)*self.num_nodes]) for i in range(self.num_softmax)]
         x = th.concat(y, 1)
-        return x * self.action_scale + self.action_bias
+        return x
 
 
 def make_env(agent_helper: AgentHelper, seed, idx, capture_video, run_name):
@@ -165,7 +170,7 @@ class SimpleDDPG:
             self.envs.single_observation_space,
             self.envs.single_action_space,
             self.device,
-            handle_timeout_termination=True,
+            handle_timeout_termination=False,
         )
 
         
@@ -190,6 +195,7 @@ class SimpleDDPG:
 
     def train(self, episodes: int):
         start_time = time.time()
+        new_best_reward = float('-inf')
 
         # TRY NOT TO MODIFY: start the game
         obs, _ = self.envs.reset()
@@ -200,32 +206,39 @@ class SimpleDDPG:
             else:
                 with th.no_grad():
                     actions = self.actor(th.Tensor(obs).to(self.device))
-                    actions += th.normal(
-                        th.ones(self.n_action)*self.agent_helper.config['rand_mu'],
-                        th.ones(self.n_action)*self.agent_helper.config['rand_sigma'])
-                    actions = actions.cpu().numpy().clip(self.envs.single_action_space.low,
-                                                          self.envs.single_action_space.high)
+                    actions = actions.cpu().numpy()
+                    scaled_actions = self.actor.scale_action(actions)
+                    scaled_actions += np.random.normal(
+                        np.ones(self.n_action)*self.agent_helper.config['rand_mu'],
+                        np.ones(self.n_action)*self.agent_helper.config['rand_sigma'])
+                    scaled_actions.clip(-1, 1)
+                    actions = self.actor.unscale_action(scaled_actions)
+                    actions = actions.clip(self.envs.single_action_space.low,
+                                            self.envs.single_action_space.high)
             
             # Post-processing: Threshold + Normalization
             actions = self.post_process_actions(actions)
-            # TODO: What about scaling actions for buffer?? (See SB3 implementation)
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, rewards, dones, _, infos = self.envs.step(actions)
 
             # TRY NOT TO MODIFY: record rewards for plotting purposes
-            for info in infos:
-                if "episode" in info.keys():
-                    print(f"global_step={global_step}, episodic_return={info['episode']['r']:0.3f}")
-                    self.writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-                    self.writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
-                    break
+            if "final_info" in infos:
+                stats = infos["final_info"][0]
+                ep_reward = float(f"{stats['episode']['r']:0.3f}")
+                if ep_reward > new_best_reward:
+                    new_best_reward = ep_reward
+                    tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}, NEW best reward")
+                else:
+                    tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}")
+                self.writer.add_scalar("charts/episodic_return", stats["episode"]["r"], global_step)
+                self.writer.add_scalar("charts/episodic_length", stats["episode"]["l"], global_step)
 
             # TRY NOT TO MODIFY: save data to reply buffer; handle `terminal_observation`
             real_next_obs = next_obs.copy()
             for idx, d in enumerate(dones):
                 if d:
-                    real_next_obs[idx] = infos[idx]["terminal_observation"]
+                    real_next_obs[idx] = infos["final_observation"][idx]
             self.rb.add(obs, real_next_obs, actions, rewards, dones, infos)
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
@@ -233,7 +246,7 @@ class SimpleDDPG:
 
             # ALGO LOGIC: training.
             # Train frequency: (1, "episode")
-            if global_step % self.agent_helper.episode_steps:
+            if global_step % self.agent_helper.episode_steps == 0:
                 # TODO: train/test on/off for models
                 if global_step > self.agent_helper.config['nb_steps_warmup_critic']:
 
@@ -241,7 +254,7 @@ class SimpleDDPG:
                     for _ in range(self.agent_helper.episode_steps):
                         data = self.rb.sample(self.batch_size)
                         with th.no_grad():
-                            next_state_actions = self.target_actor(data.next_observations)
+                            next_state_actions = self.target_actor(data.next_observations).clamp(-1, 1)
                             qf1_next_target = self.qf1_target(data.next_observations, next_state_actions)
                             next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) \
                                 * self.agent_helper.config['gamma'] * (qf1_next_target).view(-1)
@@ -271,7 +284,7 @@ class SimpleDDPG:
                             self.writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
                             self.writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
                             self.writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
-                            print("SPS:", int(global_step / (time.time() - start_time)))
+                            #print("SPS:", int(global_step / (time.time() - start_time)))
                             self.writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
         self.envs.close()
