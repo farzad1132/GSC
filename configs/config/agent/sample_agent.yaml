@@ -5,7 +5,15 @@
 # observation_space = ['ingress_traffic', 'node_load']
 observation_space:
   - ingress_traffic
-#  - node_load
+  - node_load
+
+# Available options are: ['delay', 'link_load']
+link_observation_space:
+  - delay
+  - link_load
+
+# If graph_mode is true, we will use GraphState and GNNs in DRL agent
+graph_mode: False
 
 # shuffle the order of nodes in state and action. slower but should be more effective. default = False
 shuffle_nodes: False
@@ -48,5 +56,5 @@ gamma: 0.99 # default 0.99
 target_model_update: 0.0001 # default 0.001
 
 # learning rate alpha: size of update steps during learning (too low -> slow convergence, too high -> divergence)
-learning_rate: 0.01 # default 0.001
+learning_rate: 0.001 # default 0.001
 learning_rate_decay: 0.001 # default 0.0
