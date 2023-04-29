@@ -13,9 +13,9 @@ import inspect
 import logging
 from typing import Tuple
 
-import gymnasium as gym
+import gym
 import numpy as np
-from gymnasium.utils import seeding
+from gym.utils import seeding
 
 from coordsim.reader.builders import network_builder
 from coordsim.reader.reader import get_sf, get_sfc, network_diameter

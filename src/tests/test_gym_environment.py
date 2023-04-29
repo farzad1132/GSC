@@ -3,7 +3,7 @@
 from unittest import TestCase
 
 import numpy as np
-import gymnasium as gym
+import gym
 # noinspection PyUnresolvedReferences
 import rlsp
 from rlsp.agents.main import get_config

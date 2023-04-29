@@ -4,7 +4,7 @@ from rlsp.utils.util_functions import create_simulator
 from stable_baselines3 import SAC
 from stable_baselines3.sac import MlpPolicy
 import numpy as np
-from gymnasium.spaces import Box
+from gym.spaces import Box
 import csv
 import os
 import logging

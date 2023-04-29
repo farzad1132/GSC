@@ -2,7 +2,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch as th
-from gymnasium import spaces
+from gym import spaces
 from stable_baselines3 import DDPG
 from stable_baselines3.common.buffers import ReplayBuffer
 from stable_baselines3.common.callbacks import EvalCallback
