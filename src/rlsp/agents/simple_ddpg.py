@@ -50,31 +50,53 @@ class AutoResetWithSeed(gym.wrappers.AutoResetWrapper):
 
 # TODO: This network doesn't use any feature extractor. See SB3 implementation for more insight
 class QNetwork(nn.Module):
-    def __init__(self, env):
+    def __init__(self, agent_helper: AgentHelper):
         super().__init__()
-        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod() \
-                             + np.prod(env.single_action_space.shape), 64)
-        self.fc2 = nn.Linear(64, 1)
+        hidden_layers = agent_helper.config["critic_hidden_layer_nodes"]
+        obs_space = agent_helper.env.observation_space
+        action_space = agent_helper.env.action_space
+
+        self.critic = nn.ModuleList()
+        
+        if len(hidden_layers) > 0:
+            self.critic.append(nn.Linear(np.array(obs_space.shape).prod() \
+                             + np.prod(action_space.shape), hidden_layers[0]))
+            self.critic.append(nn.ReLU())
+        if len(hidden_layers) >= 2:
+            for i in range(len(hidden_layers)-1):
+                self.critic.append(hidden_layers[i], hidden_layers[i+1])
+                self.critic.append(nn.ReLU()) 
+        self.critic.append(nn.Linear(hidden_layers[-1], 1))
+        self.critic = nn.Sequential(*self.critic)
 
 
     def forward(self, x, a):
         x = th.cat([x, a], 1)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+        return self.critic(x)
 
 
 class Actor(nn.Module):
-    def __init__(self, env, num_nodes: int, num_sfs: int):
+    def __init__(self, agent_helper: AgentHelper):
         super().__init__()
-        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod(), 128)
-        self.fc_mu = nn.Linear(128, np.prod(env.single_action_space.shape))
-        self.before_softmax = nn.Sequential(self.fc1, nn.ReLU(), self.fc_mu)
-        self.low = env.unwrapped.action_space.low
-        self.high = env.unwrapped.action_space.high
+        hidden_layers = agent_helper.config["actor_hidden_layer_nodes"]
+        obs_space = agent_helper.env.observation_space
+        action_space = agent_helper.env.action_space
+        self.before_softmax = nn.ModuleList()
+        
+        if len(hidden_layers) > 0:
+            self.before_softmax.append(nn.Linear(np.array(obs_space.shape).prod(), hidden_layers[0]))
+            self.before_softmax.append(nn.ReLU())
+        if len(hidden_layers) >= 2:
+            for i in range(len(hidden_layers)-1):
+                self.before_softmax.append(hidden_layers[i], hidden_layers[i+1])
+                self.before_softmax.append(nn.ReLU()) 
+        self.before_softmax.append(nn.Linear(hidden_layers[-1], np.prod(action_space.shape)))
+        self.before_softmax = nn.Sequential(*self.before_softmax)
 
-        self.num_nodes = num_nodes
-        self.num_softmax = self.num_nodes*num_sfs
+        self.low = action_space.low
+        self.high = action_space.high
+        self.num_nodes = agent_helper.env.env_limits.MAX_NODE_COUNT
+        self.num_softmax = self.num_nodes*agent_helper.env.env_limits.MAX_SERVICE_FUNCTION_COUNT
         self.softmax_layers = [nn.Softmax(1) for _ in range(self.num_softmax)]
     
     def scale_action(self, action: np.ndarray) -> np.ndarray:
@@ -106,6 +128,7 @@ class Actor(nn.Module):
 def make_env(agent_helper: AgentHelper, seed, idx, capture_video, run_name):
     def thunk():
         env = create_environment(agent_helper)
+        agent_helper.env = env
         env = AutoResetWithSeed(env, seed)
         env = gym.wrappers.RecordEpisodeStatistics(env)
         if capture_video:
@@ -145,16 +168,16 @@ class SimpleDDPG:
                                                 0, False, self.agent_helper.config_dir)])
         assert isinstance(self.envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-        self.num_nodes = self.envs.envs[0].env.env_limits.MAX_NODE_COUNT
-        self.num_sfs = self.envs.envs[0].env.env_limits.MAX_SERVICE_FUNCTION_COUNT
-        self.num_sfcs = self.envs.envs[0].env.env_limits.MAX_SF_CHAIN_COUNT
+        self.num_nodes = self.agent_helper.env.env_limits.MAX_NODE_COUNT
+        self.num_sfs = self.agent_helper.env.env_limits.MAX_SERVICE_FUNCTION_COUNT
+        self.num_sfcs = self.agent_helper.env.env_limits.MAX_SF_CHAIN_COUNT
         self.schedule_threshold = 0.1
         self.scheduling_accuracy = np.sqrt(np.finfo(np.float64).eps)
 
-        self.actor = Actor(self.envs, self.num_nodes, self.num_sfs).to(self.device)
-        self.qf1 = QNetwork(self.envs).to(self.device)
-        self.qf1_target = QNetwork(self.envs).to(self.device)
-        self.target_actor = Actor(self.envs, self.num_nodes, self.num_sfs).to(self.device)
+        self.actor = Actor(self.agent_helper).to(self.device)
+        self.qf1 = QNetwork(self.agent_helper).to(self.device)
+        self.qf1_target = QNetwork(self.agent_helper).to(self.device)
+        self.target_actor = Actor(self.agent_helper).to(self.device)
         self.target_actor.load_state_dict(self.actor.state_dict())
         self.qf1_target.load_state_dict(self.qf1.state_dict())
         self.q_optimizer = optim.Adam(list(self.qf1.parameters()), lr=agent_helper.config['learning_rate'])
