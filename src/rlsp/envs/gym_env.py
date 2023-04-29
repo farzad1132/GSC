@@ -35,7 +35,7 @@ class GymEnv(gym.Env):
     simulator: SimulatorInterface = ...
     simulator_wrapper: SimulatorWrapper = ...
 
-    metadata = {'render.modes': ['human']}
+    metadata = {'render_modes': ['human']}
 
     def __init__(self, agent_config, simulator, network_file, service_file, seed=None, sim_seed=None):
 
@@ -45,14 +45,15 @@ class GymEnv(gym.Env):
         self.sim_seed = sim_seed
         self.simulator_wrapper = None
         self.current_simulator_state = None
+        self.render_mode = None
 
         self.last_succ_flow = 0
         self.last_drop_flow = 0
         self.last_gen_flow = 0
         self.run_count = 0
 
-        self.np_random = np.random.RandomState()
-        self.seed(seed)
+        """ self.np_random = np.random.RandomState()
+        self.seed(seed) """
 
         self.network, _, _ = network_builder(self.network_file, self.simulator.config)
         self.network_diameter = network_diameter(self.network)
@@ -101,7 +102,7 @@ class GymEnv(gym.Env):
         logger.info(f"min_delay: {min_delay}, max_delay: {max_delay}, diameter: {self.network_diameter}")
         return min_delay, max_delay
 
-    def reset(self):
+    def reset(self, seed: int = None, **kwargs):
         """
         Resets the state of the envs, returning an initial observation.
         Outputs
@@ -110,12 +111,16 @@ class GymEnv(gym.Env):
         (Initial reward is assumed to be 0.)
 
         """
-
-        if self.sim_seed is None:
-            simulator_seed = self.np_random.randint(0, np.iinfo(np.int32).max, dtype=np.int32)
+        if seed is not None:
+            super().reset(seed=seed)
         else:
-            simulator_seed = self.sim_seed
-        logger.debug(f"Simulator seed is {simulator_seed}")
+            seed = self.np_random.integers(0, np.iinfo(np.int32).max, dtype=np.int32)
+
+        """ if self.sim_seed is None:
+            simulator_seed = self.np_random.integers(0, np.iinfo(np.int32).max, dtype=np.int32)
+        else:
+            simulator_seed = self.sim_seed """
+        logger.debug(f"Simulator seed is {seed}")
         self.simulator_wrapper = SimulatorWrapper(self.simulator, self.env_limits, self.agent_config["graph_mode"],
                                                   self.agent_config['observation_space'])
 
@@ -128,32 +133,14 @@ class GymEnv(gym.Env):
         # self.ewma_delay = self.network_diameter
 
         # to get initial state and instantiate
-        vectorized_state, self.current_simulator_state = self.simulator_wrapper.init(simulator_seed)
+        vectorized_state, self.current_simulator_state = self.simulator_wrapper.init(seed)
 
         # permute state and save permutation for reversing action later
         if self.agent_config['shuffle_nodes']:
             vectorized_state, permutation = self.simulator_wrapper.permute_node_order(vectorized_state)
             self.permutation = permutation
 
-        return vectorized_state
-
-    def seed(self, seed=None):
-        """Sets the seed for this env's random number generator(s).
-
-        Note:
-            Some environments use multiple pseudorandom number generators.
-            We want to capture all such seeds used in order to ensure that
-            there aren't accidental correlations between multiple generators.
-
-        Returns:
-            list<bigint>: Returns the list of seeds used in this env's random
-              number generators. The first value in the list should be the
-              "main" seed, or the value which a reproducer should pass to
-              'seed'. Often, the main seed equals the provided 'seed', but
-              this won't be true if seed=None, for example.
-        """
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
+        return vectorized_state, {}
 
     def step(self, action: np.ndarray) -> Tuple[object, float, bool, dict]:
 
@@ -194,7 +181,7 @@ class GymEnv(gym.Env):
             self.run_count = 0
 
         logger.debug(f"NN input (observation): {vectorized_state}")
-        return vectorized_state, reward, done, {}
+        return vectorized_state, reward, done, False, {}
 
     def render(self, mode='cli'):
         """Renders the envs.
