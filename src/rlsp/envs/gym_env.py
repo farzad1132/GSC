@@ -46,21 +46,27 @@ class GymEnv(gym.Env):
         self.sim_seed = sim_seed
         self.simulator_wrapper = None
         self.current_simulator_state = None
-        if render_mode is not None:
-            assert render_mode in self.metadata["render_modes"], "Invalid render_mode"
-        self.render_mode = render_mode
+        self.render_mode = None
 
         self.last_succ_flow = 0
         self.last_drop_flow = 0
         self.last_gen_flow = 0
         self.run_count = 0
 
+        """ self.np_random = np.random.RandomState()
+        self.seed(seed) """
+
         self.network, _, _ = network_builder(self.network_file, self.simulator.config)
         self.network_diameter = network_diameter(self.network)
         self.sfc_list = get_sfc(service_file)
         self.sf_list = get_sf(service_file)
-        self.env_limits = EnvironmentLimits(len(self.network.nodes), self.sfc_list,
-                                            len(agent_config['observation_space']))
+        self.env_limits = EnvironmentLimits(
+            num_nodes=len(self.network.nodes),
+            sfc_list=self.sfc_list,
+            node_obs_space_len=len(agent_config['observation_space']),
+            link_obs_space_len=len(agent_config["link_observation_space"]),
+            graph_mode=self.agent_config["graph_mode"]
+        )
         self.min_delay, self.max_delay = self.min_max_delay()
         self.action_space = self.env_limits.action_space
         self.observation_space = self.env_limits.observation_space
@@ -106,18 +112,18 @@ class GymEnv(gym.Env):
         (Initial reward is assumed to be 0.)
 
         """
-        if seed is None:
-            if self.sim_seed is not None:
-                seed = self.sim_seed
-            else:
-                seed = self.np_random.integers(0, 10000, dtype=int)
+        if seed is not None:
+            super().reset(seed=seed)
+        else:
+            seed = self.np_random.integers(0, np.iinfo(np.int32).max, dtype=np.int32)
 
-        super().reset(seed=seed)
-
+        """ if self.sim_seed is None:
+            simulator_seed = self.np_random.integers(0, np.iinfo(np.int32).max, dtype=np.int32)
+        else:
+            simulator_seed = self.sim_seed """
         logger.debug(f"Simulator seed is {seed}")
-        self.simulator_wrapper = SimulatorWrapper(self.simulator, self.env_limits,
-                                                    self.agent_config["graph_mode"],
-                                                    self.agent_config['observation_space'])
+        self.simulator_wrapper = SimulatorWrapper(self.simulator, self.env_limits, self.agent_config["graph_mode"],
+                                                  self.agent_config['observation_space'])
 
         self.last_succ_flow = 0
         self.last_drop_flow = 0
@@ -136,24 +142,6 @@ class GymEnv(gym.Env):
             self.permutation = permutation
 
         return obs, {}
-
-    def seed(self, seed=None):
-        """Sets the seed for this env's random number generator(s).
-
-        Note:
-            Some environments use multiple pseudorandom number generators.
-            We want to capture all such seeds used in order to ensure that
-            there aren't accidental correlations between multiple generators.
-
-        Returns:
-            list<bigint>: Returns the list of seeds used in this env's random
-              number generators. The first value in the list should be the
-              "main" seed, or the value which a reproducer should pass to
-              'seed'. Often, the main seed equals the provided 'seed', but
-              this won't be true if seed=None, for example.
-        """
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
 
     def step(self, action: np.ndarray) -> Tuple[object, float, bool, dict]:
 

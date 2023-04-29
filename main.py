@@ -7,6 +7,7 @@ import torch as th
 
 from src.rlsp.agents.main import DATETIME, create_simulator, setup, setup_files
 from src.rlsp.agents.rlsp_torch_ddpg import TorchDDPG
+from src.rlsp.agents.simple_ddpg import SimpleDDPG
 from src.rlsp.envs.gym_env import GymEnv
 
 from src.rlsp.utils.experiment_result import ExperimentResult; np.set_printoptions(suppress=True, precision=3)
@@ -63,7 +64,7 @@ def cli(agent_config, network, service, sim_config, episodes, seed, test, weight
     agent_helper = setup(agent_config, network, service, sim_config, seed, episodes, weights, verbose, DATETIME, test,
                          append_test, best, sim_seed, gen_scenario)
 
-    agent = TorchDDPG(agent_helper)
+    agent = SimpleDDPG(agent_helper)
 
     ### Training ###
     """ eval_env = Monitor(GymEnv(
@@ -99,10 +100,10 @@ def cli(agent_config, network, service, sim_config, episodes, seed, test, weight
         sim_seed=sim_seed
     )
 
-    obs = env.reset()
+    obs, _ = env.reset(agent_helper.seed)
     for _ in range(agent_helper.episode_steps):
-        action, _ = agent.model.predict(th.tensor(obs, dtype=th.float32), deterministic=True)
-        obs, _, _, _ = env.step(action)
+        action = agent.predict(th.tensor(obs, dtype=th.float32).view(1, -1))
+        obs, _, _, _, _ = env.step(action.numpy().squeeze())
 
 if __name__ == "__main__":
     agent_config = 'configs/config/agent/sample_agent.yaml'

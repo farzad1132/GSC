@@ -5,6 +5,7 @@ venv-tensorboard-win
 results
 venv*
 metric_evaluation
+/runs
 
 # LSTM weights
 res/lstm_weights

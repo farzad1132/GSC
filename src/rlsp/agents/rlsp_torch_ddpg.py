@@ -22,6 +22,10 @@ from src.rlsp.agents.agent_helper import AgentHelper
 from src.rlsp.agents.main import create_environment
 from src.rlsp.envs.gym_env import GymEnv
 
+from torch_geometric.nn.conv import GCNConv
+from torch_geometric.data import Data
+from torch_geometric.nn.pool import global_mean_pool
+
 
 class CustomActor(BasePolicy):
     """
@@ -107,6 +111,93 @@ class CustomActor(BasePolicy):
         #   Predictions are always deterministic.
         return self(observation)
 
+class GNNEmbedder(BaseFeaturesExtractor):
+    def __init__(self, observation_space, input_dim, hidden_dim: List[int], num_layers, dropout: float = 0.5):
+        """ print(f"agrs: {args}")
+        print(f"kwargs: {kwargs}") """
+
+        if not isinstance(hidden_dim, list):
+            raise Exception("hidden_dim should be a list of int")
+        assert num_layers == len(hidden_dim), "Size if hidden_dim should be equal to number of layers"
+
+        super(GNNEmbedder, self).__init__(Data, hidden_dim[-1])
+
+        # A list of GCNConv layers
+        self.convs = None
+
+        # A list of 1D batch normalization layers
+        #self.bns = None
+
+        self.convs = nn.ModuleList([GCNConv(input_dim, hidden_dim[0])])
+        if num_layers > 1:
+            self.convs.extend([GCNConv(hidden_dim[i], hidden_dim[i+1]) for i in range(num_layers-1)])
+
+        #self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers-1)])
+        self.num_layers = num_layers
+
+        # Probability of an element to be zeroed
+        self.dropout = dropout
+
+    def reset_parameters(self):
+        for conv in self.convs:
+            conv.reset_parameters()
+        """ for bn in self.bns:
+            bn.reset_parameters() """
+
+    def forward(self, x, adj_t):
+        out = None
+
+        for layer in range(self.num_layers):
+            if layer != self.num_layers -1:
+                x = self.convs[layer].forward(x, adj_t)
+                #x = self.bns[layer].forward(x)
+                x = nn.functional.relu(x)
+                #x = nn.functional.dropout(x, p=self.dropout, training=self.training)
+            else:
+                x = self.convs[layer].forward(x, adj_t)
+                out = global_mean_pool(x)
+
+        return out
+
+class GraphPolicy(TD3Policy):
+    def __init__(self, observation_space: spaces.Space, action_space: spaces.Space,
+            lr_schedule: Schedule,
+            net_arch: Optional[Union[List[int], Dict[str, List[int]]]] = None,
+            activation_fn: Type[nn.Module] = nn.ReLU,
+            features_extractor_class: Type[BaseFeaturesExtractor] = GNNEmbedder,
+            features_extractor_kwargs: Optional[Dict[str, Any]] = None,
+            normalize_images: bool = True, optimizer_class: Type[th.optim.Optimizer] = th.optim.Adam,
+            optimizer_kwargs: Optional[Dict[str, Any]] = None,
+            n_critics: int = 2, share_features_extractor: bool = False,
+            **kwargs):
+
+        self.custom_kwagrs = kwargs
+        # TODO: Refactor
+        squash_output = False
+        self.custom_kwagrs["squash_output"] = squash_output
+
+        # Adding GNN embedder kwargs
+        # TODO: get these from agent config file
+        extra_features_extractor_kwargs = {
+            "num_layers": 1,
+            "input_dim": self.custom_kwagrs["node_input_features"],
+            "hidden_dim": [32]
+        }
+        if features_extractor_kwargs is None:
+            features_extractor_kwargs = extra_features_extractor_kwargs
+        else:
+            features_extractor_kwargs.update(extra_features_extractor_kwargs)
+
+        super().__init__(observation_space, action_space, lr_schedule, net_arch, activation_fn,
+        features_extractor_class, features_extractor_kwargs, normalize_images, optimizer_class,
+        optimizer_kwargs, n_critics, share_features_extractor)
+
+        self._squash_output = squash_output     
+        
+
+    def make_actor(self, features_extractor: Optional[BaseFeaturesExtractor] = None) -> Actor:
+        actor_kwargs = self._update_features_extractor(self.actor_kwargs, features_extractor)
+        return CustomActor(**actor_kwargs, **self.custom_kwagrs).to(self.device)
 
 class CustomMlpPolicy(MlpPolicy):
     def __init__(self, observation_space: spaces.Space, action_space: spaces.Space,
@@ -238,6 +329,10 @@ class CustomDDPG(DDPG):
 class TorchDDPG:
     def __init__(self, agent_helper: AgentHelper):
         self.agent_helper = agent_helper
+        if agent_helper.config["graph_mode"]:
+            self.policy_class = GraphPolicy
+        else:
+            self.policy_class = CustomMlpPolicy
         self.create(create_environment(agent_helper))
 
     
@@ -246,7 +341,7 @@ class TorchDDPG:
         n_actions = env.action_space.shape[-1]
 
         self.model = CustomDDPG(
-            policy=CustomMlpPolicy,
+            policy=self.policy_class,
             env=env,
             tensorboard_log="./graph",
             policy_kwargs={
@@ -256,7 +351,8 @@ class TorchDDPG:
                 "net_arch": {
                     "pi": self.agent_helper.config['actor_hidden_layer_nodes'],
                     "qf": self.agent_helper.config['critic_hidden_layer_nodes']
-                }
+                },
+                "node_input_features": 2
             },
             learning_starts=self.agent_helper.config['nb_steps_warmup_critic'],
             gamma=self.agent_helper.config['gamma'],

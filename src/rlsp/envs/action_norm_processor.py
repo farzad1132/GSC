@@ -22,7 +22,7 @@ class ActionScheduleProcessor:
         self.schedule_threshold = schedule_threshold
 
     def process_action(self, action):
-        assert len(action) == self.num_nodes * self.num_sfcs * self.num_sfs * self.num_nodes
+        assert len(action) == self.num_nodes * self.num_sfcs * self.num_sfs * self.num_nodes, "wrong dimensions"
 
         # iterate through action array, select slice with probabilities belonging to one SF
         # processes probabilities (round low probs to 0, normalize), append and move on
