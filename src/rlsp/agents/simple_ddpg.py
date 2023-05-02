@@ -141,6 +141,16 @@ def make_env(agent_helper: AgentHelper, seed, idx, capture_video, run_name):
 
     return thunk
 
+def simple_make_env(agent_helper: AgentHelper):
+    env = create_environment(agent_helper)
+    agent_helper.env = env
+    # TODO: check between default auto reset and auto reset with seed
+    #env = gym.wrappers.AutoResetWrapper(env)
+    env = AutoResetWithSeed(env, agent_helper.seed)
+    env = gym.wrappers.RecordEpisodeStatistics(env)
+    return env
+
+
 class SimpleDDPG:
     def __init__(self, agent_helper: AgentHelper) -> None:
         self.agent_helper = agent_helper
@@ -164,9 +174,8 @@ class SimpleDDPG:
             ) """
         
         self._writer_setup()
-        self.envs = gym.vector.SyncVectorEnv([make_env(self.agent_helper, self.agent_helper.sim_seed,
-                                                0, False, self.agent_helper.config_dir)])
-        assert isinstance(self.envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
+        self.env = simple_make_env(agent_helper)
+        assert isinstance(self.env.action_space, gym.spaces.Box), "only continuous action space is supported"
 
         self.num_nodes = self.agent_helper.env.env_limits.MAX_NODE_COUNT
         self.num_sfs = self.agent_helper.env.env_limits.MAX_SERVICE_FUNCTION_COUNT
@@ -185,7 +194,7 @@ class SimpleDDPG:
 
         self.batch_size = 100
         self.policy_frequency = 1
-        self.n_action = self.envs.single_action_space.shape[-1]
+        self.n_action = self.env.action_space.shape[-1]
         
         self.envs.single_observation_space.dtype = np.float32
         self.rb = ReplayBuffer(
@@ -221,14 +230,14 @@ class SimpleDDPG:
         new_best_reward = float('-inf')
 
         # TRY NOT TO MODIFY: start the game
-        obs, _ = self.envs.reset()
+        obs, _ = self.env.reset()
         for global_step in tqdm(range(self.agent_helper.episode_steps*episodes)):
             # ALGO LOGIC: put action logic here
             if global_step < self.agent_helper.config['nb_steps_warmup_critic']:
-                actions = np.array([self.envs.single_action_space.sample() for _ in range(self.envs.num_envs)])
+                actions = self.env.action_space.sample()
             else:
                 with th.no_grad():
-                    actions = self.actor(th.Tensor(obs).to(self.device))
+                    actions = self.actor(th.Tensor(obs).view(1, -1).to(self.device))
                     actions = actions.cpu().numpy()
                     scaled_actions = self.actor.scale_action(actions)
                     scaled_actions += np.random.normal(
@@ -236,32 +245,29 @@ class SimpleDDPG:
                         np.ones(self.n_action)*self.agent_helper.config['rand_sigma'])
                     scaled_actions.clip(-1, 1)
                     actions = self.actor.unscale_action(scaled_actions)
-                    actions = actions.clip(self.envs.single_action_space.low,
-                                            self.envs.single_action_space.high)
+                    actions = actions.clip(self.env.action_space.low, self.env.action_space.high)
             
             # Post-processing: Threshold + Normalization
-            actions = self.post_process_actions(actions)
+            actions = self.post_process_actions(np.squeeze(actions))
 
             # TRY NOT TO MODIFY: execute the game and log data.
-            next_obs, rewards, dones, _, infos = self.envs.step(actions)
+            next_obs, rewards, dones, _, infos = self.env.step(actions)
 
             # TRY NOT TO MODIFY: record rewards for plotting purposes
             if "final_info" in infos:
-                stats = infos["final_info"][0]
-                ep_reward = float(f"{stats['episode']['r']:0.3f}")
+                ep_reward = float(f"{infos['episode']['r']:0.3f}")
                 if ep_reward > new_best_reward:
                     new_best_reward = ep_reward
                     tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}, NEW best reward")
                 else:
                     tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}")
-                self.writer.add_scalar("charts/episodic_return", stats["episode"]["r"], global_step)
-                self.writer.add_scalar("charts/episodic_length", stats["episode"]["l"], global_step)
+                self.writer.add_scalar("charts/episodic_return", infos["episode"]["r"], global_step)
+                self.writer.add_scalar("charts/episodic_length", infos["episode"]["l"], global_step)
 
             # TRY NOT TO MODIFY: save data to reply buffer; handle `terminal_observation`
             real_next_obs = next_obs.copy()
-            for idx, d in enumerate(dones):
-                if d:
-                    real_next_obs[idx] = infos["final_observation"][idx]
+            if dones:
+                real_next_obs = infos["final_observation"]
             self.rb.add(obs, real_next_obs, actions, rewards, dones, infos)
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
@@ -310,7 +316,7 @@ class SimpleDDPG:
                             #print("SPS:", int(global_step / (time.time() - start_time)))
                             self.writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
-        self.envs.close()
+        self.env.close()
         self.writer.close()
     
     @th.no_grad()
@@ -354,7 +360,7 @@ class SimpleDDPG:
         return output_list
 
     def post_process_actions(self, action):
-        assert action.shape[1] == self.num_nodes * self.num_sfcs * self.num_sfs * self.num_nodes, "wrong dimensions"
+        assert action.shape[0] == self.num_nodes * self.num_sfcs * self.num_sfs * self.num_nodes, "wrong dimensions"
 
         # iterate through action array, select slice with probabilities belonging to one SF
         # processes probabilities (round low probs to 0, normalize), append and move on
@@ -362,7 +368,7 @@ class SimpleDDPG:
         start_idx = 0
         for _ in range(self.num_nodes * self.num_sfcs * self.num_sfs):
             end_idx = start_idx + self.num_nodes
-            probs = action[0, start_idx:end_idx]
+            probs = action[start_idx:end_idx]
             for _ in range(2):
                 rounded_probs = [p if p >= self.schedule_threshold else 0 for p in probs]
                 normalized_probs = np.array(self.normalize_scheduling_probabilities(rounded_probs))
@@ -373,6 +379,6 @@ class SimpleDDPG:
             processed_action.extend(normalized_probs)
             start_idx += self.num_nodes
 
-        assert len(processed_action) == action.shape[1]
-        return np.reshape(np.array(processed_action), (1, -1))
+        assert len(processed_action) == action.shape[0]
+        return np.array(processed_action)
 
