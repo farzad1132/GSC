@@ -75,12 +75,12 @@ class EnvironmentLimits:
 
         node_load_size = self.MAX_NODE_COUNT
         node_shape = (self.observation_space_len * node_load_size,)
-        node_obs = spaces.Box(low=0, high=1, shape=node_shape, dtype=np.float64)
+        node_obs = spaces.Box(low=0, high=1, shape=node_shape, dtype=np.float32)
 
         if not self.graph_mode:
             node_load_size = self.MAX_NODE_COUNT
             node_shape = (self.observation_space_len * node_load_size,)
-            return spaces.Box(low=0, high=1, shape=node_shape, dtype=np.float64)
+            return spaces.Box(low=0, high=1, shape=node_shape, dtype=np.float32)
         else:
             return spaces.Graph(
                 node_space=spaces.Box(low=0, high=1, shape=(self.observation_space_len, ), dtype=np.float64),

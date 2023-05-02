@@ -196,7 +196,6 @@ class SimpleDDPG:
         self.policy_frequency = 1
         self.n_action = self.env.action_space.shape[-1]
         
-        self.envs.single_observation_space.dtype = np.float32
         self.rb = ReplayBuffer(
             self.batch_size,
             self.envs.single_observation_space,
