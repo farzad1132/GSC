@@ -102,7 +102,7 @@ def cli(agent_config, network, service, sim_config, episodes, seed, test, weight
 
     obs, _ = env.reset(agent_helper.seed)
     for _ in range(agent_helper.episode_steps):
-        action = agent.predict(th.tensor(obs, dtype=th.float32).view(1, -1))
+        action = agent.predict(obs)
         obs, _, _, _, _ = env.step(action.numpy().squeeze())
 
 if __name__ == "__main__":

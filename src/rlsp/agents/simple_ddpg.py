@@ -5,7 +5,8 @@
 import os
 import random
 import time
-from distutils.util import strtobool
+from copy import deepcopy
+from typing import Dict, List
 
 import gym
 import numpy as np
@@ -14,13 +15,38 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import wandb
-from stable_baselines3.common.buffers import ReplayBuffer
+from stable_baselines3.common.buffers import DictReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
+from torch_geometric.data import Batch, Data
+from torch_geometric.nn import GCNConv
+from torch_geometric.nn.pool import global_mean_pool
 from tqdm import tqdm
 
 from src.rlsp.agents.agent_helper import AgentHelper
 from src.rlsp.agents.main import create_environment
 
+
+def torch_stack_to_graph_batch(obs: Dict) -> Batch:
+    """
+        This function converts stacked arrays to pytorch_geometric's Batch object
+    """
+    data_list = []
+    for i in range(obs["adj"].shape[0]):
+        # TODO: Add edge attribute as follow: edge_attr=obs["edges"][i, :]
+        data = Data(x=obs["nodes"][i, :], edge_index=obs["adj"][i, :, :])
+        data_list.append(data)
+    return Batch.from_data_list(data_list)
+
+def graph_to_dict(data: Data) -> Dict:
+    """
+        This function converts graph obs to dict obs to be stored in buffer
+    """
+    # TODO: Add edges key-value
+    return {
+        "nodes": data.x,
+        #"edges": data.edge_attr,
+        "adj": data.edge_index
+    }
 
 class AutoResetWithSeed(gym.wrappers.AutoResetWrapper):
     def __init__(self, env: gym.Env, seed: int):
@@ -47,19 +73,69 @@ class AutoResetWithSeed(gym.wrappers.AutoResetWrapper):
 
         return obs, reward, terminated, truncated, info
 
+class GNNEmbedder(nn.Module):
+    """
+        This graph embedder module 
+    """
+    def __init__(self, input_dim, hidden_dim: List[int], num_layers, dropout: float = 0.5):
+        super().__init__()
+
+        if not isinstance(hidden_dim, list):
+            raise Exception("hidden_dim should be a list of int")
+        assert num_layers == len(hidden_dim), "Size if hidden_dim should be equal to number of layers"
+
+
+        # A list of 1D batch normalization layers
+        #self.bns = None
+
+        self.convs = nn.ModuleList([GCNConv(input_dim, hidden_dim[0])])
+        if num_layers > 1:
+            self.convs.extend([GCNConv(hidden_dim[i], hidden_dim[i+1]) for i in range(num_layers-1)])
+
+        #self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers-1)])
+        self.num_layers = num_layers
+
+        # Probability of an element to be zeroed
+        self.dropout = dropout
+
+    def reset_parameters(self):
+        for conv in self.convs:
+            conv.reset_parameters()
+        """ for bn in self.bns:
+            bn.reset_parameters() """
+
+    def forward(self, x, adj_t, batch):
+        out = None
+
+        for layer in range(self.num_layers):
+            if layer != self.num_layers -1:
+                x = self.convs[layer].forward(x, adj_t)
+                #x = self.bns[layer].forward(x)
+                x = nn.functional.relu(x)
+                #x = nn.functional.dropout(x, p=self.dropout, training=self.training)
+            else:
+                x = self.convs[layer].forward(x, adj_t)
+                out = global_mean_pool(x, batch=batch)
+
+        return out
 
 # TODO: This network doesn't use any feature extractor. See SB3 implementation for more insight
 class QNetwork(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
         super().__init__()
+        self.agent_helper = agent_helper
         hidden_layers = agent_helper.config["critic_hidden_layer_nodes"]
         obs_space = agent_helper.env.observation_space
         action_space = agent_helper.env.action_space
 
+        ## Feature extractor
+        feature_size = 22
+        self.feature = GNNEmbedder(2, [feature_size], 1)
+
         self.critic = nn.ModuleList()
         
         if len(hidden_layers) > 0:
-            self.critic.append(nn.Linear(np.array(obs_space.shape).prod() \
+            self.critic.append(nn.Linear(feature_size \
                              + np.prod(action_space.shape), hidden_layers[0]))
             self.critic.append(nn.ReLU())
         if len(hidden_layers) >= 2:
@@ -71,6 +147,8 @@ class QNetwork(nn.Module):
 
 
     def forward(self, x, a):
+        if self.agent_helper.config["graph_mode"]:
+            x = self.feature(x.x, x.edge_index, x.batch)
         x = th.cat([x, a], 1)
         return self.critic(x)
 
@@ -78,13 +156,18 @@ class QNetwork(nn.Module):
 class Actor(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
         super().__init__()
+        self.agent_helper = agent_helper
         hidden_layers = agent_helper.config["actor_hidden_layer_nodes"]
         obs_space = agent_helper.env.observation_space
         action_space = agent_helper.env.action_space
         self.before_softmax = nn.ModuleList()
+
+        ## Feature extractor
+        feature_size = 22
+        self.feature = GNNEmbedder(2, [feature_size], 1)
         
         if len(hidden_layers) > 0:
-            self.before_softmax.append(nn.Linear(np.array(obs_space.shape).prod(), hidden_layers[0]))
+            self.before_softmax.append(nn.Linear(feature_size, hidden_layers[0]))
             self.before_softmax.append(nn.ReLU())
         if len(hidden_layers) >= 2:
             for i in range(len(hidden_layers)-1):
@@ -119,6 +202,8 @@ class Actor(nn.Module):
         return self.low + (0.5 * (scaled_action + 1.0) * (self.high - self.low))
 
     def forward(self, x):
+        if self.agent_helper.config["graph_mode"]:
+            x = self.feature(x.x, x.edge_index, x.batch)
         x = self.before_softmax(x)
         y = [self.softmax_layers[i](x[:, i*self.num_nodes:(i+1)*self.num_nodes]) for i in range(self.num_softmax)]
         x = th.concat(y, 1)
@@ -196,11 +281,11 @@ class SimpleDDPG:
         self.policy_frequency = 1
         self.n_action = self.env.action_space.shape[-1]
         
-        self.rb = ReplayBuffer(
-            self.batch_size,
-            self.envs.single_observation_space,
-            self.envs.single_action_space,
-            self.device,
+        self.rb = DictReplayBuffer(
+            buffer_size=self.batch_size,
+            action_space=self.env.action_space,
+            observation_space=self.env.observation_space,
+            device=self.device,
             handle_timeout_termination=False,
         )
 
@@ -236,7 +321,10 @@ class SimpleDDPG:
                 actions = self.env.action_space.sample()
             else:
                 with th.no_grad():
-                    actions = self.actor(th.Tensor(obs).view(1, -1).to(self.device))
+                    if self.agent_helper.config["graph_mode"]:
+                        actions = self.actor(obs.to(self.device))
+                    else:
+                        actions = self.actor(th.Tensor(obs).view(1, -1).to(self.device))
                     actions = actions.cpu().numpy()
                     scaled_actions = self.actor.scale_action(actions)
                     scaled_actions += np.random.normal(
@@ -264,10 +352,10 @@ class SimpleDDPG:
                 self.writer.add_scalar("charts/episodic_length", infos["episode"]["l"], global_step)
 
             # TRY NOT TO MODIFY: save data to reply buffer; handle `terminal_observation`
-            real_next_obs = next_obs.copy()
+            real_next_obs = deepcopy(next_obs)
             if dones:
                 real_next_obs = infos["final_observation"]
-            self.rb.add(obs, real_next_obs, actions, rewards, dones, infos)
+            self.rb.add(graph_to_dict(obs), graph_to_dict(real_next_obs), actions, rewards, dones, infos)
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
             obs = next_obs
@@ -276,18 +364,27 @@ class SimpleDDPG:
             # Train frequency: (1, "episode")
             if global_step % self.agent_helper.episode_steps == 0:
                 # TODO: train/test on/off for models
-                if global_step > self.agent_helper.config['nb_steps_warmup_critic']:
+                if global_step >= self.agent_helper.config['nb_steps_warmup_critic']:
 
                     # Multiple gradient steps
                     for _ in range(self.agent_helper.episode_steps):
                         data = self.rb.sample(self.batch_size)
                         with th.no_grad():
-                            next_state_actions = self.target_actor(data.next_observations).clamp(-1, 1)
-                            qf1_next_target = self.qf1_target(data.next_observations, next_state_actions)
+                            if self.agent_helper.config["graph_mode"]:
+                                next_obs = torch_stack_to_graph_batch(data.next_observations)
+                            else:
+                                next_obs = data.next_observations
+                            #data.next_observations = torch_stack_to_graph_batch(data.next_observations)
+                            next_state_actions = self.target_actor(next_obs).clamp(-1, 1)
+                            qf1_next_target = self.qf1_target(next_obs, next_state_actions)
                             next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) \
                                 * self.agent_helper.config['gamma'] * (qf1_next_target).view(-1)
-
-                        qf1_a_values = self.qf1(data.observations, data.actions).view(-1)
+                        if self.agent_helper.config["graph_mode"]:
+                            cur_obs = torch_stack_to_graph_batch(data.observations)
+                        else:
+                            cur_obs = data.observations
+                        #data.observations = torch_stack_to_graph_batch(data.observations)
+                        qf1_a_values = self.qf1(cur_obs, data.actions).view(-1)
                         qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
 
                         # optimize the model
@@ -296,7 +393,7 @@ class SimpleDDPG:
                         self.q_optimizer.step()
 
                         if global_step % self.policy_frequency == 0:
-                            actor_loss = -self.qf1(data.observations, self.actor(data.observations)).mean()
+                            actor_loss = -self.qf1(cur_obs, self.actor(cur_obs)).mean()
                             self.actor_optimizer.zero_grad()
                             actor_loss.backward()
                             self.actor_optimizer.step()
@@ -320,7 +417,10 @@ class SimpleDDPG:
     
     @th.no_grad()
     def predict(self, obs):
-        return self.actor(th.Tensor(obs).to(self.device))
+        if self.agent_helper.config["graph_mode"]:
+            return self.actor(obs)
+        else:
+            return self.actor(th.tensor(obs, dtype=th.float32).view(1, -1))
 
     def normalize_scheduling_probabilities(self, input_list: list) -> list:
 

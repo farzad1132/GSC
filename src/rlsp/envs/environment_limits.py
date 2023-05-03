@@ -16,7 +16,7 @@ class EnvironmentLimits:
     """
 
     def __init__(self, num_nodes: int, sfc_list, node_obs_space_len: int,
-                 link_obs_space_len: int, graph_mode: bool = False):
+                 link_obs_space_len: int, num_edges, graph_mode: bool = False):
         """
         Adapt the env to max len of SFs
         """
@@ -25,6 +25,7 @@ class EnvironmentLimits:
         self.observation_space_len = node_obs_space_len
         self.link_obs_space_len = link_obs_space_len
         self.graph_mode = graph_mode
+        self.num_edges = num_edges
 
         max_sf_length = 0
         for _, sf_list in sfc_list.items():
@@ -82,10 +83,11 @@ class EnvironmentLimits:
             node_shape = (self.observation_space_len * node_load_size,)
             return spaces.Box(low=0, high=1, shape=node_shape, dtype=np.float32)
         else:
-            return spaces.Graph(
-                node_space=spaces.Box(low=0, high=1, shape=(self.observation_space_len, ), dtype=np.float64),
-                edge_space=spaces.Box(low=0, high=1, shape=(self.link_obs_space_len,), dtype=np.float64)
-            )
+            return spaces.Dict(spaces={
+                "nodes": spaces.Box(low=0, high=1, shape=(self.MAX_NODE_COUNT, self.observation_space_len), dtype=np.float32),
+                #"edges":  spaces.Box(low=0, high=1, shape=(2*self.num_edges, self.link_obs_space_len), dtype=np.float32),
+                "adj": spaces.Box(0, 1000, shape=(2, 2*self.num_edges), dtype=np.int64) 
+            })
 
     def create_filled_node_load_array(self, default=0.0) -> np.ndarray:
         """creates an array with shape and type of the node_load array.

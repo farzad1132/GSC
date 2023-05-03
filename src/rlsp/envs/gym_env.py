@@ -65,7 +65,8 @@ class GymEnv(gym.Env):
             sfc_list=self.sfc_list,
             node_obs_space_len=len(agent_config['observation_space']),
             link_obs_space_len=len(agent_config["link_observation_space"]),
-            graph_mode=self.agent_config["graph_mode"]
+            graph_mode=self.agent_config["graph_mode"],
+            num_edges=self.network.number_of_edges()
         )
         self.min_delay, self.max_delay = self.min_max_delay()
         self.action_space = self.env_limits.action_space

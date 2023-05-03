@@ -238,7 +238,7 @@ class SimulatorWrapper:
         # Adding `ingress_traffic` attribute to nodes
         if 'ingress_traffic' in self.observations_space:
             group_node_attrs.append("ingress_traffic")
-            ingress_traffic = np.array([0.0 for v in state.network['nodes']])
+            ingress_traffic = np.array([0.0 for v in state.network['nodes']], dtype=np.float32)
             for node, sfc_dict in state.traffic.items():
                 for sfc, sf_dict in sfc_dict.items():
                     ingress_sf = state.sfcs[sfc][0]
@@ -252,11 +252,14 @@ class SimulatorWrapper:
         # Adding `node_load` attribute to nodes
         if 'node_load' in self.observations_space:
             group_node_attrs.append("node_load")
-            nodes_utilization = np.array([0.0 for v in state.network['nodes']])
+            nodes_utilization = np.array([0.0 for v in state.network['nodes']], dtype=np.float32)
             for node in state.network["nodes"]:
                 cap = node["resource"]
                 usage = sum(state.network_stats["run_total_processed_traffic"][node['id']].values())
-                nodes_utilization[self.node_map[node['id']]] = usage/cap
+                if cap == 0:
+                    nodes_utilization[self.node_map[node['id']]] = 1
+                else:
+                    nodes_utilization[self.node_map[node['id']]] = usage/cap
             
             nodes_utilization = np.clip(nodes_utilization / (np.max(nodes_utilization)+1e-3), 0, 1)
 
