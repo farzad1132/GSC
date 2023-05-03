@@ -308,6 +308,101 @@ class SimpleDDPG:
         th.manual_seed(seed)
         th.backends.cudnn.deterministic = cuda_deterministic
     
+    def _choose_action(self, obs, global_step):
+        if global_step < self.agent_helper.config['nb_steps_warmup_critic']:
+            actions = self.env.action_space.sample()
+        else:
+            with th.no_grad():
+                if self.agent_helper.config["graph_mode"]:
+                    actions = self.actor(obs.to(self.device))
+                else:
+                    actions = self.actor(th.Tensor(obs).view(1, -1).to(self.device))
+                actions = actions.cpu().numpy()
+                scaled_actions = self.actor.scale_action(actions)
+                scaled_actions += np.random.normal(
+                    np.ones(self.n_action)*self.agent_helper.config['rand_mu'],
+                    np.ones(self.n_action)*self.agent_helper.config['rand_sigma'])
+                scaled_actions.clip(-1, 1)
+                actions = self.actor.unscale_action(scaled_actions)
+                actions = actions.clip(self.env.action_space.low, self.env.action_space.high)
+        
+        return actions
+    
+
+    def _update_critic(self, next_obs, cur_obs, dones, rewards, actions):
+        with th.no_grad():
+            next_state_actions = self.target_actor(next_obs).clamp(-1, 1)
+            qf1_next_target = self.qf1_target(next_obs, next_state_actions)
+            next_q_value = rewards.flatten() + (1 - dones.flatten()) \
+                * self.agent_helper.config['gamma'] * (qf1_next_target).view(-1)
+        
+        qf1_a_values = self.qf1(cur_obs, actions).view(-1)
+        qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+
+        # optimize the model
+        self.q_optimizer.zero_grad()
+        qf1_loss.backward()
+        self.q_optimizer.step()
+
+        return qf1_a_values, qf1_loss
+    
+    def _update_actor(self, cur_obs):
+        actor_loss = -self.qf1(cur_obs, self.actor(cur_obs)).mean()
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        self.actor_optimizer.step()
+
+        return actor_loss
+    
+    def _update_target_networks(self):
+        tau = self.agent_helper.config['target_model_update']
+        for param, target_param in zip(self.actor.parameters(), self.target_actor.parameters()):
+            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+        for param, target_param in zip(self.qf1.parameters(), self.qf1_target.parameters()):
+            target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+    
+    def _convert_obs(self, observations, next_observations):
+        """
+            This function is useful to adapt obs when we want to operate in graph mode
+        """
+        if self.agent_helper.config["graph_mode"]:
+            next_obs = torch_stack_to_graph_batch(next_observations)
+        else:
+            next_obs = next_observations
+
+        if self.agent_helper.config["graph_mode"]:
+            cur_obs = torch_stack_to_graph_batch(observations)
+        else:
+            cur_obs = observations
+
+        return cur_obs, next_obs
+
+    def _update_episode_metrics(self, infos, new_best_reward, global_step):
+        if "final_info" in infos:
+            ep_reward = float(f"{infos['episode']['r']:0.3f}")
+            if ep_reward > new_best_reward:
+                new_best_reward = ep_reward
+                tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}, NEW best reward")
+            else:
+                tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}")
+            self.writer.add_scalar("charts/episodic_return", infos["episode"]["r"], global_step)
+            self.writer.add_scalar("charts/episodic_length", infos["episode"]["l"], global_step)
+        
+        return new_best_reward
+    
+    def _update_loss_metrics(self, qf1_loss, actor_loss, qf1_a_values, start_time, global_step):
+        self.writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
+        self.writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
+        self.writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
+        #print("SPS:", int(global_step / (time.time() - start_time)))
+        self.writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+    
+    def _store_transition_in_buffer(self, obs, next_obs, actions, rewards, dones, infos):
+        real_next_obs = deepcopy(next_obs)
+        if dones:
+            real_next_obs = infos["final_observation"]
+        self.rb.add(graph_to_dict(obs), graph_to_dict(real_next_obs), actions, rewards, dones, infos)
+    
 
     def train(self, episodes: int):
         start_time = time.time()
@@ -317,22 +412,7 @@ class SimpleDDPG:
         obs, _ = self.env.reset()
         for global_step in tqdm(range(self.agent_helper.episode_steps*episodes)):
             # ALGO LOGIC: put action logic here
-            if global_step < self.agent_helper.config['nb_steps_warmup_critic']:
-                actions = self.env.action_space.sample()
-            else:
-                with th.no_grad():
-                    if self.agent_helper.config["graph_mode"]:
-                        actions = self.actor(obs.to(self.device))
-                    else:
-                        actions = self.actor(th.Tensor(obs).view(1, -1).to(self.device))
-                    actions = actions.cpu().numpy()
-                    scaled_actions = self.actor.scale_action(actions)
-                    scaled_actions += np.random.normal(
-                        np.ones(self.n_action)*self.agent_helper.config['rand_mu'],
-                        np.ones(self.n_action)*self.agent_helper.config['rand_sigma'])
-                    scaled_actions.clip(-1, 1)
-                    actions = self.actor.unscale_action(scaled_actions)
-                    actions = actions.clip(self.env.action_space.low, self.env.action_space.high)
+            actions = self._choose_action(obs, global_step)
             
             # Post-processing: Threshold + Normalization
             actions = self.post_process_actions(np.squeeze(actions))
@@ -341,21 +421,10 @@ class SimpleDDPG:
             next_obs, rewards, dones, _, infos = self.env.step(actions)
 
             # TRY NOT TO MODIFY: record rewards for plotting purposes
-            if "final_info" in infos:
-                ep_reward = float(f"{infos['episode']['r']:0.3f}")
-                if ep_reward > new_best_reward:
-                    new_best_reward = ep_reward
-                    tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}, NEW best reward")
-                else:
-                    tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}")
-                self.writer.add_scalar("charts/episodic_return", infos["episode"]["r"], global_step)
-                self.writer.add_scalar("charts/episodic_length", infos["episode"]["l"], global_step)
+            new_best_reward = self._update_episode_metrics(infos, new_best_reward, global_step)
 
             # TRY NOT TO MODIFY: save data to reply buffer; handle `terminal_observation`
-            real_next_obs = deepcopy(next_obs)
-            if dones:
-                real_next_obs = infos["final_observation"]
-            self.rb.add(graph_to_dict(obs), graph_to_dict(real_next_obs), actions, rewards, dones, infos)
+            self._store_transition_in_buffer(obs, next_obs, actions, rewards, dones, infos)
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
             obs = next_obs
@@ -369,48 +438,18 @@ class SimpleDDPG:
                     # Multiple gradient steps
                     for _ in range(self.agent_helper.episode_steps):
                         data = self.rb.sample(self.batch_size)
-                        with th.no_grad():
-                            if self.agent_helper.config["graph_mode"]:
-                                next_obs = torch_stack_to_graph_batch(data.next_observations)
-                            else:
-                                next_obs = data.next_observations
-                            #data.next_observations = torch_stack_to_graph_batch(data.next_observations)
-                            next_state_actions = self.target_actor(next_obs).clamp(-1, 1)
-                            qf1_next_target = self.qf1_target(next_obs, next_state_actions)
-                            next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) \
-                                * self.agent_helper.config['gamma'] * (qf1_next_target).view(-1)
-                        if self.agent_helper.config["graph_mode"]:
-                            cur_obs = torch_stack_to_graph_batch(data.observations)
-                        else:
-                            cur_obs = data.observations
-                        #data.observations = torch_stack_to_graph_batch(data.observations)
-                        qf1_a_values = self.qf1(cur_obs, data.actions).view(-1)
-                        qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
 
-                        # optimize the model
-                        self.q_optimizer.zero_grad()
-                        qf1_loss.backward()
-                        self.q_optimizer.step()
+                        cur_obs, next_obs = self._convert_obs(data.observations, data.next_observations)
+
+                        qf1_a_values, qf1_loss = self._update_critic(next_obs, cur_obs, data.dones, data.rewards, data.actions)
 
                         if global_step % self.policy_frequency == 0:
-                            actor_loss = -self.qf1(cur_obs, self.actor(cur_obs)).mean()
-                            self.actor_optimizer.zero_grad()
-                            actor_loss.backward()
-                            self.actor_optimizer.step()
+                            actor_loss = self._update_actor(cur_obs)
 
-                            # update the target network
-                            tau = self.agent_helper.config['target_model_update']
-                            for param, target_param in zip(self.actor.parameters(), self.target_actor.parameters()):
-                                target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
-                            for param, target_param in zip(self.qf1.parameters(), self.qf1_target.parameters()):
-                                target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
+                            self._update_target_networks()
 
                         if global_step % 100 == 0:
-                            self.writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
-                            self.writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
-                            self.writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
-                            #print("SPS:", int(global_step / (time.time() - start_time)))
-                            self.writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+                            self._update_loss_metrics(qf1_loss, actor_loss, qf1_a_values, start_time, global_step)
 
         self.env.close()
         self.writer.close()
