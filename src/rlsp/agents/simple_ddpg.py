@@ -129,8 +129,17 @@ class QNetwork(nn.Module):
         action_space = agent_helper.env.action_space
 
         ## Feature extractor
-        feature_size = 22
-        self.feature = GNNEmbedder(2, [feature_size], 1)
+        if agent_helper.config["critic_feature_size"] is not None:
+            feature_size = int(agent_helper.config["critic_feature_size"])
+        else:
+            feature_size = np.array(obs_space.shape).prod()
+        
+        if self.agent_helper.config["graph_mode"] is True and \
+            agent_helper.config["critic_feature_size"] is not None:
+            self.feature = GNNEmbedder(2, [feature_size], 1)
+            self.graph_mode = True
+        else:
+            self.graph_mode = False
 
         self.critic = nn.ModuleList()
         
@@ -147,7 +156,7 @@ class QNetwork(nn.Module):
 
 
     def forward(self, x, a):
-        if self.agent_helper.config["graph_mode"]:
+        if self.graph_mode:
             x = self.feature(x.x, x.edge_index, x.batch)
         x = th.cat([x, a], 1)
         return self.critic(x)
@@ -268,14 +277,7 @@ class SimpleDDPG:
         self.schedule_threshold = 0.1
         self.scheduling_accuracy = np.sqrt(np.finfo(np.float64).eps)
 
-        self.actor = Actor(self.agent_helper).to(self.device)
-        self.qf1 = QNetwork(self.agent_helper).to(self.device)
-        self.qf1_target = QNetwork(self.agent_helper).to(self.device)
-        self.target_actor = Actor(self.agent_helper).to(self.device)
-        self.target_actor.load_state_dict(self.actor.state_dict())
-        self.qf1_target.load_state_dict(self.qf1.state_dict())
-        self.q_optimizer = optim.Adam(list(self.qf1.parameters()), lr=agent_helper.config['learning_rate'])
-        self.actor_optimizer = optim.Adam(list(self.actor.parameters()), lr=agent_helper.config['learning_rate'])
+        self._init_networks()
 
         self.batch_size = 100
         self.policy_frequency = 1
@@ -290,7 +292,15 @@ class SimpleDDPG:
         )
 
         
-
+    def _init_networks(self):
+        self.actor = Actor(self.agent_helper).to(self.device)
+        self.qf1 = QNetwork(self.agent_helper).to(self.device)
+        self.qf1_target = QNetwork(self.agent_helper).to(self.device)
+        self.target_actor = Actor(self.agent_helper).to(self.device)
+        self.target_actor.load_state_dict(self.actor.state_dict())
+        self.qf1_target.load_state_dict(self.qf1.state_dict())
+        self.q_optimizer = optim.Adam(list(self.qf1.parameters()), lr=self.agent_helper.config['learning_rate'])
+        self.actor_optimizer = optim.Adam(list(self.actor.parameters()), lr=self.agent_helper.config['learning_rate'])
 
     def _writer_setup(self):
         self.writer = SummaryWriter(f"runs/{self.agent_helper.test}")

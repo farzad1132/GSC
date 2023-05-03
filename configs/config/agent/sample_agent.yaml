@@ -13,7 +13,7 @@ link_observation_space:
   - link_load
 
 # If graph_mode is true, we will use GraphState and GNNs in DRL agent
-graph_mode: False
+graph_mode: True
 
 # shuffle the order of nodes in state and action. slower but should be more effective. default = False
 shuffle_nodes: False
@@ -29,6 +29,7 @@ actor_hidden_layer_nodes: [128] # Array with nodes for each layer
 actor_hidden_layer_activation: "relu"
 critic_hidden_layer_nodes: [64] # Array with nodes for each layer
 critic_hidden_layer_activation: "relu"
+critic_feature_size: 22
 
 # objective and reward
 objective: 'weighted'
