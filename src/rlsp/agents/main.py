@@ -317,39 +317,7 @@ def load_weights(agent, file):
     agent.load_weights(file)
 
 
-def create_environment(agent_helper):
-    # not sure why, but simulator has to be loaded here (not at top) for proper logging
 
-    agent_helper.result.env_config['seed'] = agent_helper.seed
-    agent_helper.result.env_config['sim-seed'] = agent_helper.sim_seed
-    agent_helper.result.env_config['network_file'] = agent_helper.network_path
-    agent_helper.result.env_config['service_file'] = agent_helper.service_path
-    agent_helper.result.env_config['sim_config_file'] = agent_helper.sim_config_path
-    agent_helper.result.env_config['simulator_cls'] = "siminterface.Simulator"
-
-    # Get the environment and extract the number of actions.
-    """ env = gym.make(ENV_NAME,
-                   agent_config=agent_helper.config,
-                   simulator=create_simulator(agent_helper),
-                   network_file=agent_helper.network_path,
-                   service_file=agent_helper.service_path,
-                   seed=agent_helper.seed,
-                   sim_seed=agent_helper.sim_seed) """
-
-    env = GymEnv(
-        agent_config=agent_helper.config,
-        simulator=create_simulator(agent_helper),
-        network_file=agent_helper.network_path,
-        service_file=agent_helper.service_path,
-        seed=agent_helper.seed,
-        sim_seed=agent_helper.sim_seed
-    )
-    env.num_envs = 1
-    agent_helper.result.env_config['reward_fnc'] = LiteralStr(env.reward_func_repr())
-    #env = DummyVecEnv([lambda: env])
-    #env = Monitor(env, agent_helper.config_dir)
-
-    return env
 
 
 def create_agent(agent_helper):

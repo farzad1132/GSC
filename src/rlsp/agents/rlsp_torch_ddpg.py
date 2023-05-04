@@ -17,14 +17,13 @@ from stable_baselines3.common.type_aliases import Schedule
 from stable_baselines3.ddpg import MlpPolicy
 from stable_baselines3.td3.policies import Actor, TD3Policy
 from torch import nn
+from torch_geometric.data import Data
+from torch_geometric.nn.conv import GCNConv
+from torch_geometric.nn.pool import global_mean_pool
 
 from src.rlsp.agents.agent_helper import AgentHelper
-from src.rlsp.agents.main import create_environment
 from src.rlsp.envs.gym_env import GymEnv
-
-from torch_geometric.nn.conv import GCNConv
-from torch_geometric.data import Data
-from torch_geometric.nn.pool import global_mean_pool
+from src.rlsp.utils.util_functions import create_environment
 
 
 class CustomActor(BasePolicy):
