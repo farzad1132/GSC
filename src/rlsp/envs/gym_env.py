@@ -124,7 +124,7 @@ class GymEnv(gym.Env):
             simulator_seed = self.sim_seed """
         logger.debug(f"Simulator seed is {seed}")
         self.simulator_wrapper = SimulatorWrapper(self.simulator, self.env_limits, self.agent_config["graph_mode"],
-                                                  self.agent_config['observation_space'])
+                                                  self.agent_config['observation_space'], self.agent_config["link_observation_space"])
 
         self.last_succ_flow = 0
         self.last_drop_flow = 0

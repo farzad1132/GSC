@@ -85,8 +85,8 @@ class EnvironmentLimits:
         else:
             return spaces.Dict(spaces={
                 "nodes": spaces.Box(low=0, high=1, shape=(self.MAX_NODE_COUNT, self.observation_space_len), dtype=np.float32),
-                #"edges":  spaces.Box(low=0, high=1, shape=(2*self.num_edges, self.link_obs_space_len), dtype=np.float32),
-                "adj": spaces.Box(0, 1000, shape=(2, 2*self.num_edges), dtype=np.int64) 
+                "edges":  spaces.Box(low=0, high=1, shape=(self.num_edges, self.link_obs_space_len), dtype=np.float32),
+                "adj": spaces.Box(0, 100000, shape=(2, self.num_edges), dtype=np.int64) 
             })
 
     def create_filled_node_load_array(self, default=0.0) -> np.ndarray:

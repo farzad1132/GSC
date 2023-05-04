@@ -32,8 +32,7 @@ def torch_stack_to_graph_batch(obs: Dict) -> Batch:
     """
     data_list = []
     for i in range(obs["adj"].shape[0]):
-        # TODO: Add edge attribute as follow: edge_attr=obs["edges"][i, :]
-        data = Data(x=obs["nodes"][i, :], edge_index=obs["adj"][i, :, :])
+        data = Data(x=obs["nodes"][i, :], edge_index=obs["adj"][i, :, :], edge_attr=obs["edges"][i, :])
         data_list.append(data)
     return Batch.from_data_list(data_list)
 
@@ -41,10 +40,9 @@ def graph_to_dict(data: Data) -> Dict:
     """
         This function converts graph obs to dict obs to be stored in buffer
     """
-    # TODO: Add edges key-value
     return {
         "nodes": data.x,
-        #"edges": data.edge_attr,
+        "edges": data.edge_attr,
         "adj": data.edge_index
     }
 

@@ -88,7 +88,8 @@ class BaseController:
                 'dst': edge_dest,
                 'delay': edge_delay,
                 'data_rate': edge_dr,
-                'used_data_rate': edge_used_dr
+                'used_data_rate': edge_used_dr,
+                'run_passed_traffic': edge[2]["run_passed_traffic"]
             })
 
     def update_prediction(self):

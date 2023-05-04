@@ -171,7 +171,7 @@ def read_network(file, node_cap=None, link_cap=None, force_link_cap: float = Non
     if not file.endswith(".graphml"):
         raise ValueError("{} is not a GraphML file".format(file))
     graphml_network = nx.read_graphml(file, node_type=int)
-    networkx_network = nx.Graph()
+    networkx_network = nx.DiGraph()
 
     #  Setting the nodes of the NetworkX Graph
     for n in graphml_network.nodes(data=True):
@@ -228,6 +228,8 @@ def read_network(file, node_cap=None, link_cap=None, force_link_cap: float = Non
         # Adding the undirected edges for each link defined in the network.
         # delay = edge delay , cap = edge capacity
         networkx_network.add_edge(source, target, delay=delay, cap=link_fwd_cap, remaining_cap=link_fwd_cap,
+                                  run_passed_traffic=0)
+        networkx_network.add_edge(target, source, delay=delay, cap=link_fwd_cap, remaining_cap=link_fwd_cap,
                                   run_passed_traffic=0)
 
     # setting the weight property for each edge in the NetworkX Graph
