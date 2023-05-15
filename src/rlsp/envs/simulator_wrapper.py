@@ -14,6 +14,7 @@ from siminterface.simulator import Simulator
 from spinterface import SimulatorAction, SimulatorState
 from src.rlsp.envs.action_norm_processor import ActionScheduleProcessor
 from src.rlsp.envs.environment_limits import EnvironmentLimits
+from torch_geometric.data import Data
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +28,18 @@ class SimulatorWrapper:
     """
 
     def __init__(self, simulator: Simulator, env_limits: EnvironmentLimits,
-                graph_mode: bool, observations_space=('ingress_traffic', 'node_load')):
+                graph_mode: bool, observations_space=('ingress_traffic', 'node_load'),
+                link_obs_space=("delay", "link_load")):
         self.simulator = simulator
         self.env_limits = env_limits
         self.sfc_dict = {}
         self.node_map = {}
+        self.edge_map = {}
         self.sfc_map = {}
         self.sf_map = {}
         self.observations_space = observations_space
         self.graph_mode = graph_mode
+        self.link_obs_space = link_obs_space
 
     def init(self, seed) -> Tuple[object, SimulatorState]:
         """Creates a new simulation environment.
@@ -72,6 +76,11 @@ class SimulatorWrapper:
         for node in init_state.network['nodes']:
             self.node_map[node['id']] = node_index
             node_index = node_index + 1
+        
+        edge_index = 0
+        for edge in init_state.network['edges']:
+            self.edge_map[(edge["src"], edge["dst"])] = edge_index
+            edge_index += 1
 
         self.sfc_dict = init_state.sfcs
 
@@ -220,7 +229,7 @@ class SimulatorWrapper:
 
         return nn_input_state
 
-    def _parse_state_as_graph(self, state):
+    def _parse_state_as_graph(self, state) -> Data:
         """
             This method parses SimulatorState to GraphState
         """
@@ -231,7 +240,7 @@ class SimulatorWrapper:
         # Deleting dict attributes (We don't need them in our GraphState)
         for (_,d) in net.nodes(data=True):
             d.clear()
-        for _,_,d in net.edges(data=True):
+        for _,_, d in net.edges(data=True):
             d.clear()
         del net.graph["shortest_paths"]
 
@@ -267,11 +276,39 @@ class SimulatorWrapper:
 
             for (node, d) in net.nodes(data=True):
                 d["node_load"] = nodes_utilization[self.node_map[node]]
+        
+        group_edge_attrs = []
+
+        # Adding `delay` property to edges
+        if "delay" in self.link_obs_space:
+            group_edge_attrs.append("delay")
+            link_delays = np.array([0.0 for v in state.network['edges']], dtype=np.float32)
+            for edge in state.network["edges"]:
+                delay = edge["delay"]
+                link_delays[self.edge_map[(edge["src"], edge["dst"])]] = delay
+
+            link_delays = np.clip(link_delays / (np.max(link_delays)+1e-4), 0, 1)
+
+            for src, dst, prop in net.edges(data=True):
+                prop["delay"] = link_delays[self.edge_map[(src, dst)]]
+        
+        # Adding `link_load` property to edges
+        if "link_load" in self.link_obs_space:
+            group_edge_attrs.append("link_load")
+            link_load = np.array([0.0 for v in state.network['edges']], dtype=np.float32)
+            for edge in state.network["edges"]:
+                passed_traffic = edge["run_passed_traffic"]
+                link_load[self.edge_map[(edge["src"], edge["dst"])]] = passed_traffic
+            
+            link_load = np.clip(link_load / (np.max(link_load)+1e-4), 0, 1)
+        
+            for src, dst, prop in net.edges(data=True):
+                    prop["link_load"] = link_load[self.edge_map[(src, dst)]]
 
         # Using pytorch_geometric utility to convert networkx's Graph to pytorch_geometric's Data
         data = from_networkx(net,
                             group_node_attrs=group_node_attrs,
-                            group_edge_attrs=None)
+                            group_edge_attrs=group_edge_attrs)
         
         return data
     

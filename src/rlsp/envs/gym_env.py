@@ -26,6 +26,30 @@ from src.rlsp.utils.constants import SUPPORTED_OBJECTIVES
 
 logger = logging.getLogger(__name__)
 
+class AutoResetWithSeed(gym.wrappers.AutoResetWrapper):
+    def __init__(self, env: gym.Env, seed: int):
+        super().__init__(env)
+        self.seed = seed
+    
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        if terminated or truncated:
+
+            new_obs, new_info = self.env.reset(self.seed)
+            assert (
+                "final_observation" not in new_info
+            ), 'info dict cannot contain key "final_observation" '
+            assert (
+                "final_info" not in new_info
+            ), 'info dict cannot contain key "final_info" '
+
+            new_info["final_observation"] = obs
+            new_info["final_info"] = info
+
+            obs = new_obs
+            info = new_info
+
+        return obs, reward, terminated, truncated, info
 
 class GymEnv(gym.Env):
     """
@@ -124,7 +148,7 @@ class GymEnv(gym.Env):
             simulator_seed = self.sim_seed """
         logger.debug(f"Simulator seed is {seed}")
         self.simulator_wrapper = SimulatorWrapper(self.simulator, self.env_limits, self.agent_config["graph_mode"],
-                                                  self.agent_config['observation_space'])
+                                                  self.agent_config['observation_space'], self.agent_config["link_observation_space"])
 
         self.last_succ_flow = 0
         self.last_drop_flow = 0
