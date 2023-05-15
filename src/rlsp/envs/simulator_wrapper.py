@@ -230,7 +230,9 @@ class SimulatorWrapper:
         
         # Deleting dict attributes (We don't need them in our GraphState)
         for (_,d) in net.nodes(data=True):
-            del d["available_sf"]
+            d.clear()
+        for _,_,d in net.edges(data=True):
+            d.clear()
         del net.graph["shortest_paths"]
 
         group_node_attrs = []
