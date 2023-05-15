@@ -12,8 +12,11 @@ run_duration: 100                  # default: 100
 
 ttl_choices: [100]
 
+write_flow_actions: True
+write_schedule: True
+
 ### This parameter overwrites links' capacity
-# force_link_cap: 3
+force_link_cap: 3
 
 ### This parameter overwrites nodes' capacity
 # force_node_cap: [1, 4] 

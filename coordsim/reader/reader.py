@@ -192,6 +192,8 @@ def read_network(file, node_cap=None, link_cap=None, force_link_cap: float = Non
         # Init 'remaining_resources' to the node capacity
         networkx_network.add_node(node_id, name=node_name, type=node_type, cap=cap, available_sf={},
                                   remaining_cap=cap)
+        networkx_network.add_edge(node_id, node_id, delay=0.001, cap=1000, remaining_cap=1000,
+                                  run_passed_traffic=0)
 
     # set links
     # calculate link delay based on geo positions of nodes;

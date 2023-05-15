@@ -228,7 +228,7 @@ class SimulatorWrapper:
 
         return nn_input_state
 
-    def _parse_state_as_graph(self, state):
+    def _parse_state_as_graph(self, state) -> Data:
         """
             This method parses SimulatorState to GraphState
         """
