@@ -284,7 +284,7 @@ class SimpleDDPG:
         self.n_action = self.env.action_space.shape[-1]
         
         self.rb = DictReplayBuffer(
-            buffer_size=self.batch_size,
+            buffer_size=self.agent_helper.config["mem_limit"],
             action_space=self.env.action_space,
             observation_space=self.env.observation_space,
             device=self.device,
