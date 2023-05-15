@@ -12,14 +12,13 @@ import torch as th
 import torch.nn.functional as F
 import torch.optim as optim
 import wandb
-from stable_baselines3.common.buffers import DictReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.rlsp.agents.agent_helper import AgentHelper
+from src.rlsp.agents.buffer import GraphReplayBuffer
 from src.rlsp.agents.models import Actor, QNetwork
-from src.rlsp.utils.util_functions import (graph_to_dict, simple_make_env,
-                                           torch_stack_to_graph_batch)
+from src.rlsp.utils.util_functions import simple_make_env
 
 
 class SimpleDDPG:
@@ -60,12 +59,10 @@ class SimpleDDPG:
         self.policy_frequency = 1
         self.n_action = self.env.action_space.shape[-1]
         
-        self.rb = DictReplayBuffer(
-            buffer_size=self.batch_size,
+        self.rb = GraphReplayBuffer(
+            buffer_size=self.agent_helper.config["mem_limit"],
             action_space=self.env.action_space,
-            observation_space=self.env.observation_space,
-            device=self.device,
-            handle_timeout_termination=False,
+            device=self.device
         )
 
         
@@ -147,22 +144,6 @@ class SimpleDDPG:
             target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
         for param, target_param in zip(self.qf1.parameters(), self.qf1_target.parameters()):
             target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
-    
-    def _convert_obs(self, observations, next_observations):
-        """
-            This function is useful to adapt obs when we want to operate in graph mode
-        """
-        if self.agent_helper.config["graph_mode"]:
-            next_obs = torch_stack_to_graph_batch(next_observations)
-        else:
-            next_obs = next_observations
-
-        if self.agent_helper.config["graph_mode"]:
-            cur_obs = torch_stack_to_graph_batch(observations)
-        else:
-            cur_obs = observations
-
-        return cur_obs, next_obs
 
     def _update_episode_metrics(self, infos, new_best_reward, global_step):
         if "final_info" in infos:
@@ -188,7 +169,7 @@ class SimpleDDPG:
         real_next_obs = deepcopy(next_obs)
         if dones:
             real_next_obs = infos["final_observation"]
-        self.rb.add(graph_to_dict(obs), graph_to_dict(real_next_obs), actions, rewards, dones, infos)
+        self.rb.add(obs, real_next_obs, actions, rewards, dones, infos)
     
 
     def train(self, episodes: int):
@@ -225,13 +206,17 @@ class SimpleDDPG:
                     # Multiple gradient steps
                     for _ in range(self.agent_helper.episode_steps):
                         data = self.rb.sample(self.batch_size)
-
-                        cur_obs, next_obs = self._convert_obs(data.observations, data.next_observations)
-
-                        qf1_a_values, qf1_loss = self._update_critic(next_obs, cur_obs, data.dones, data.rewards, data.actions)
+                        
+                        qf1_a_values, qf1_loss = self._update_critic(
+                            next_obs=data.next_observations,
+                            cur_obs=data.observations,
+                            dones=data.dones,
+                            rewards=data.rewards,
+                            actions=data.actions
+                        )
 
                         if global_step % self.policy_frequency == 0:
-                            actor_loss = self._update_actor(cur_obs)
+                            actor_loss = self._update_actor(cur_obs=data.observations)
 
                             self._update_target_networks()
 
