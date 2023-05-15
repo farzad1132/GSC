@@ -336,7 +336,7 @@ class SimpleDDPG:
                 actions = self.actor.unscale_action(scaled_actions)
                 actions = actions.clip(self.env.action_space.low, self.env.action_space.high)
         
-        return actions
+        return np.squeeze(actions)
     
 
     def _update_critic(self, next_obs, cur_obs, dones, rewards, actions):
@@ -425,7 +425,7 @@ class SimpleDDPG:
             actions = self._choose_action(obs, global_step)
             
             # Post-processing: Threshold + Normalization
-            actions = self.post_process_actions(np.squeeze(actions))
+            actions = self.post_process_actions(actions)
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, rewards, dones, _, infos = self.env.step(actions)
