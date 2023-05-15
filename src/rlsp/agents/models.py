@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import Linear as Lin
 from torch.nn import ReLU
 from torch.nn import Sequential as Seq
-from torch_geometric.nn import GCNConv, global_mean_pool
+from torch_geometric.nn import GCNConv, global_mean_pool, NNConv
 from torch_geometric.utils import scatter
 
 from src.rlsp.agents.agent_helper import AgentHelper
@@ -62,7 +62,110 @@ class GlobalModel(th.nn.Module):
         ], dim=1)
         return self.global_mlp(out)
 
+class NNConvEmbedder(nn.Module):
+    def __init__(self, in_node: int, out_node: int, in_edge: int) -> None:
+        super().__init__()
 
+        self.embedder = NNConv(
+            in_channels=in_node,
+            out_channels=out_node,
+            nn=nn.Sequential(Lin(in_edge, 64), ReLU(), Lin(64, in_node*out_node))
+        )
+    
+    def reset_parameters(self):
+        self.embedder.reset_parameters()
+    
+    def forward(self, x, adj_t, edge_attr, batch):
+        out = self.embedder(x=x, edge_index=adj_t, edge_attr=edge_attr)
+        return th.cat([out[adj_t[0]], out[adj_t[1]]], dim=1)
+
+class NNConvCritic(nn.Module):
+    def __init__(self, agent_helper: AgentHelper) -> None:
+        super().__init__()
+        #self.agent_helper = agent_helper
+        hidden_layers = agent_helper.config["critic_hidden_layer_nodes"]
+        #obs_space = agent_helper.env.observation_space
+        n_actions = agent_helper.env.action_space.shape[0]
+        node_in = agent_helper.env.env_limits.observation_space_len
+        edge_in = agent_helper.env.env_limits.link_obs_space_len + 2 + n_actions
+
+        feature_size = int(agent_helper.config["critic_feature_size"])
+        self.feature = NNConvEmbedder(
+            in_node=node_in,
+            out_node=feature_size,
+            in_edge=edge_in
+        )
+
+        self.critic = nn.ModuleList()
+        
+        if len(hidden_layers) > 0:
+            self.critic.append(nn.Linear(2*feature_size + n_actions, hidden_layers[0]))
+            self.critic.append(nn.ReLU())
+        if len(hidden_layers) >= 2:
+            for i in range(len(hidden_layers)-1):
+                self.critic.append(hidden_layers[i], hidden_layers[i+1])
+                self.critic.append(nn.ReLU()) 
+        self.critic.append(nn.Linear(hidden_layers[-1], 1))
+        self.critic = nn.Sequential(*self.critic)
+    
+    def forward(self, x, a):
+        x = self.feature(x.x, x.edge_index, x.edge_attr, x.batch)
+        x = th.cat([x, a], 1)
+        return self.critic(x)
+
+class NNConvActor(nn.Module):
+    def __init__(self, agent_helper: AgentHelper) -> None:
+        super().__init__()
+        hidden_layers = agent_helper.config["actor_hidden_layer_nodes"]
+        #obs_space = agent_helper.env.observation_space
+        action_space = agent_helper.env.action_space
+        n_actions = agent_helper.env.action_space.shape[0]
+        node_in = agent_helper.env.env_limits.observation_space_len
+        edge_in = agent_helper.env.env_limits.link_obs_space_len + 2 + n_actions
+        self.low = action_space.low
+        self.high = action_space.high
+        self.actor = nn.ModuleList()
+
+        feature_size = 12
+        self.feature = NNConvEmbedder(
+            in_node=node_in,
+            out_node=feature_size,
+            in_edge=edge_in
+        )
+
+        if len(hidden_layers) > 0:
+            self.actor.append(nn.Linear(2*feature_size, hidden_layers[0]))
+            self.actor.append(nn.ReLU())
+        if len(hidden_layers) >= 2:
+            for i in range(len(hidden_layers)-1):
+                self.actor.append(hidden_layers[i], hidden_layers[i+1])
+                self.actor.append(nn.ReLU()) 
+        self.actor.append(nn.Linear(hidden_layers[-1], np.prod(action_space.shape)))
+        self.actor = nn.Sequential(*self.actor)
+    
+    def scale_action(self, action: np.ndarray) -> np.ndarray:
+        """
+        Rescale the action from [low, high] to [-1, 1]
+        (no need for symmetric action space)
+
+        :param action: Action to scale
+        :return: Scaled action
+        """
+        return 2.0 * ((action - self.low) / (self.high - self.low)) - 1.0
+
+    def unscale_action(self, scaled_action: np.ndarray) -> np.ndarray:
+        """
+        Rescale the action from [-1, 1] to [low, high]
+        (no need for symmetric action space)
+
+        :param scaled_action: Action to un-scale
+        """
+        return self.low + (0.5 * (scaled_action + 1.0) * (self.high - self.low))
+    
+    def forward(self, x):
+        x = self.feature(x.x, x.edge_index, x.edge_attr, x.batch)
+        x = self.actor(x)
+        return x
 
 class GNNEmbedder(nn.Module):
     """
