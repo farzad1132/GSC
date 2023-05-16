@@ -20,9 +20,9 @@ class GraphReplayBuffer:
 
         self.dones = np.ones(self.buffer_size, np.float32)
         self.rewards = np.zeros(self.buffer_size, dtype=np.float32)
-        self.actions = np.zeros(self.buffer_size, dtype=action_space.dtype)
-        self.observations = np.zeros((self.buffer_size, 4), dtype=Data)
-        self.next_observations = np.zeros((self.buffer_size, 4), dtype=Data)
+        self.actions = np.zeros(self.buffer_size, dtype=th.Tensor)
+        self.observations = np.zeros((self.buffer_size, 3), dtype=Data)
+        self.next_observations = np.zeros((self.buffer_size, 3), dtype=Data)
     
         self.pos = 0
         self.full = False
@@ -34,11 +34,12 @@ class GraphReplayBuffer:
         action: np.ndarray,
         reward: np.ndarray,
         done: np.ndarray,
+        infos
     ) -> None:
         
-        self.dones[self.pos] = done.copy()
-        self.rewards[self.pos] = reward.copy()
-        self.actions[self.pos] = action.copy()
+        self.dones[self.pos] = done
+        self.rewards[self.pos] = reward
+        self.actions[self.pos] = th.from_numpy(action)
         self.observations[self.pos] = obs.clone()
         self.next_observations[self.pos] = next_obs.clone()
 
@@ -54,9 +55,9 @@ class GraphReplayBuffer:
             batch_inds = np.random.randint(0, self.pos, size=batch_size)
         
         return BufferSample(
-            observations=Batch.from_data_list(self.observations[batch_inds]).to(self.device),
+            observations=Batch.from_data_list(list(map(lambda x: Data.from_dict(dict(map(lambda y: y, x))), self.observations[batch_inds]))).to(self.device),
             actions=self.actions[batch_inds],
-            next_observations=Batch.from_data_list(self.next_observations[batch_inds]).to(self.device),
+            next_observations=Batch.from_data_list(list(map(lambda x: Data.from_dict(dict(map(lambda y: y, x))), self.next_observations[batch_inds]))).to(self.device),
             dones=th.from_numpy(self.dones[batch_inds]).to(self.device),
             rewards=th.from_numpy(self.rewards[batch_inds]).to(self.device)
         )
