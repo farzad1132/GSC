@@ -239,7 +239,7 @@ class SimulatorWrapper:
         # Deleting dict attributes (We don't need them in our GraphState)
         for (_,d) in net.nodes(data=True):
             d.clear()
-        for _,_, d in net.edges(data=True):
+        for _,_,d in net.edges(data=True):
             d.clear()
         del net.graph["shortest_paths"]
 

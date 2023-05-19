@@ -61,7 +61,7 @@ class SimpleDDPG:
         self.n_action = self.env.action_space.shape[-1]
         
         self.rb = DictReplayBuffer(
-            buffer_size=self.batch_size,
+            buffer_size=self.agent_helper.config["mem_limit"],
             action_space=self.env.action_space,
             observation_space=self.env.observation_space,
             device=self.device,
@@ -113,7 +113,7 @@ class SimpleDDPG:
                 actions = self.actor.unscale_action(scaled_actions)
                 actions = actions.clip(self.env.action_space.low, self.env.action_space.high)
         
-        return actions
+        return np.squeeze(actions)
     
 
     def _update_critic(self, next_obs, cur_obs, dones, rewards, actions):
@@ -202,7 +202,7 @@ class SimpleDDPG:
             actions = self._choose_action(obs, global_step)
             
             # Post-processing: Threshold + Normalization
-            actions = self.post_process_actions(np.squeeze(actions))
+            actions = self.post_process_actions(actions)
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, rewards, dones, _, infos = self.env.step(actions)
@@ -218,9 +218,9 @@ class SimpleDDPG:
 
             # ALGO LOGIC: training.
             # Train frequency: (1, "episode")
-            if global_step % self.agent_helper.episode_steps == 0:
+            if global_step % self.agent_helper.episode_steps == self.agent_helper.episode_steps-1:
                 # TODO: train/test on/off for models
-                if global_step >= self.agent_helper.config['nb_steps_warmup_critic']:
+                if global_step >= self.agent_helper.config['nb_steps_warmup_critic']-1:
 
                     # Multiple gradient steps
                     for _ in range(self.agent_helper.episode_steps):
