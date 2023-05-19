@@ -441,9 +441,9 @@ class SimpleDDPG:
 
             # ALGO LOGIC: training.
             # Train frequency: (1, "episode")
-            if global_step % self.agent_helper.episode_steps == 0:
+            if global_step % self.agent_helper.episode_steps == self.agent_helper.episode_steps-1:
                 # TODO: train/test on/off for models
-                if global_step >= self.agent_helper.config['nb_steps_warmup_critic']:
+                if global_step >= self.agent_helper.config['nb_steps_warmup_critic']-1:
 
                     # Multiple gradient steps
                     for _ in range(self.agent_helper.episode_steps):
