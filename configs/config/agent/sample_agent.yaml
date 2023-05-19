@@ -33,8 +33,8 @@ critic_feature_size: 22
 
 # objective and reward
 objective: 'weighted'
-flow_weight: 0.7
-delay_weight: 0.3
+flow_weight: 1
+delay_weight: 0
 node_weight: 0
 
 # Memory Config
