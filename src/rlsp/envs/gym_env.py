@@ -15,7 +15,9 @@ from typing import Tuple
 
 import gym
 import numpy as np
-from gym.utils import seeding
+import torch as th
+from torch_geometric.data import Data
+from torch_geometric.utils import softmax
 
 from coordsim.reader.builders import network_builder
 from coordsim.reader.reader import get_sf, get_sfc, network_diameter
@@ -128,6 +130,28 @@ class GymEnv(gym.Env):
         logger.info(f"min_delay: {min_delay}, max_delay: {max_delay}, diameter: {self.network_diameter}")
         return min_delay, max_delay
 
+    def _post_append_gsc_obs(self, obs: Data) -> Data:
+        target_edge_vec = th.zeros(self.env_limits.num_edges, 1)
+        target_edge_vec[self.next_target_edge, 0] = 1
+        obs.edge_attr = th.cat(
+            [
+                obs.edge_attr,
+                self.edge_values,
+                self.edge_flags,
+                target_edge_vec
+            ],
+            dim=1
+        )
+        return obs
+    
+    def _update_gsc_inner_state(self, action) -> None:
+        self.edge_values[self.next_target_edge, :] = th.tensor(action)
+        self.edge_flags[self.next_target_edge, 0] = 1
+        self.next_target_edge = (self.next_target_edge+1) % self.env_limits.num_edges
+        if self.run_count % self.env_limits.num_edges == 0:
+            self.edge_flags = th.zeros(self.env_limits.num_edges, 1)
+            self.edge_values = th.zeros(self.env_limits.num_edges, self.env_limits.MAX_SERVICE_FUNCTION_COUNT)
+    
     def reset(self, seed: int = None, **kwargs):
         """
         Resets the state of the envs, returning an initial observation.
@@ -161,10 +185,20 @@ class GymEnv(gym.Env):
         # to get initial state and instantiate
         obs, self.current_simulator_state = self.simulator_wrapper.init(seed)
 
+        self.edge_values = th.zeros(self.env_limits.num_edges, self.env_limits.MAX_SERVICE_FUNCTION_COUNT)
+        #ptr = self.simulator_wrapper._calculate_ptr(self.simulator_wrapper.last_edge_index)
+        #self.init_edge_values = softmax(self.edge_values, ptr=ptr)
+        #self.edge_values = self.init_edge_values.cpu().clone()
+        self.edge_flags = th.zeros(self.env_limits.num_edges, 1)
+        self.next_target_edge = 0
+
         # permute state and save permutation for reversing action later
         if self.agent_config['shuffle_nodes']:
             obs, permutation = self.simulator_wrapper.permute_node_order(obs)
             self.permutation = permutation
+
+        if self.agent_config["graph_mode"]:
+            obs = self._post_append_gsc_obs(obs)
 
         return obs, {}
 
@@ -187,6 +221,7 @@ class GymEnv(gym.Env):
         """
         done = False
         self.run_count += 1
+        self._update_gsc_inner_state(action)
         logger.debug(f"Action array (NN output + noise, normalized): {action}")
 
         # reverse action order using permutation from previous state shuffle
@@ -195,7 +230,10 @@ class GymEnv(gym.Env):
             self.permutation = None
 
         # apply reversed action, calculate reward
-        obs, self.current_simulator_state = self.simulator_wrapper.apply(action)
+        if self.agent_config["graph_mode"]:
+            obs, self.current_simulator_state = self.simulator_wrapper.apply(action, self.edge_values)
+        else:
+            obs, self.current_simulator_state = self.simulator_wrapper.apply(action)
         reward = self.calculate_reward(self.current_simulator_state)
 
         # then shuffle new state again and save new permutation
@@ -207,6 +245,8 @@ class GymEnv(gym.Env):
             self.run_count = 0
 
         logger.debug(f"NN input (observation): {obs}")
+        if self.agent_config["graph_mode"]:
+            obs = self._post_append_gsc_obs(obs)
         return obs, reward, done, False, {}
 
     def render(self, mode='cli'):

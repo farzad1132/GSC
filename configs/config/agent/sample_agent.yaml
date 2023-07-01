@@ -19,7 +19,7 @@ graph_mode: True
 shuffle_nodes: False
 
 # Setting episode steps
-episode_steps: 200
+episode_steps: 18
 
 # Agent type: SAC or DDPG
 agent_type: "DDPG"
@@ -29,7 +29,7 @@ actor_hidden_layer_nodes: [128] # Array with nodes for each layer
 actor_hidden_layer_activation: "relu"
 critic_hidden_layer_nodes: [64] # Array with nodes for each layer
 critic_hidden_layer_activation: "relu"
-critic_feature_size: 22
+critic_feature_size: 12
 
 # objective and reward
 objective: 'weighted'

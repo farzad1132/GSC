@@ -61,7 +61,7 @@ class EnvironmentLimits:
         # shape is flattened array of scheduling spaces:
         shape_flattened = (np.prod(self.scheduling_shape),)
 
-        return spaces.Box(low=0, high=1, shape=shape_flattened)
+        return spaces.Box(low=0, high=1, shape=(self.MAX_SERVICE_FUNCTION_COUNT,))
 
     @property
     def observation_space(self):
@@ -85,7 +85,8 @@ class EnvironmentLimits:
         else:
             return spaces.Dict(spaces={
                 "nodes": spaces.Box(low=0, high=1, shape=(self.MAX_NODE_COUNT, self.observation_space_len), dtype=np.float32),
-                "edges":  spaces.Box(low=0, high=1, shape=(self.num_edges, self.link_obs_space_len), dtype=np.float32),
+                "edges":  spaces.Box(low=0, high=1, shape=(self.num_edges,
+                                        self.link_obs_space_len+2+self.MAX_SERVICE_FUNCTION_COUNT), dtype=np.float32),
                 "adj": spaces.Box(0, 100000, shape=(2, self.num_edges), dtype=np.int64) 
             })
 

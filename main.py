@@ -3,7 +3,7 @@ from typing import Callable
 
 import click
 import numpy as np
-import torch as th
+import torch as th; th.set_printoptions(precision=2, linewidth=120, sci_mode=False)
 
 from src.rlsp.agents.main import DATETIME, create_simulator, setup, setup_files
 from src.rlsp.agents.rlsp_torch_ddpg import TorchDDPG
@@ -107,7 +107,8 @@ def cli(agent_config, network, service, sim_config, episodes, seed, test, weight
 
 if __name__ == "__main__":
     agent_config = 'configs/config/agent/sample_agent.yaml'
-    network = 'configs/networks/node6/node6-in2-cap1-delay10.graphml'
+    #network = 'configs/networks/abilene/abilene-in4-rand-cap1-2.graphml'
+    network = "configs/networks/node6/node6-in2-cap1-delay10.graphml"
     service = 'configs/service_functions/abc.yaml'
     sim_config = 'configs/config/simulator/sample_config.yaml'
     # sim_config = 'configs/config/simulator/det-mmp-arrival7-3_det-size0_dur100_no_traffic_prediction.yaml'
@@ -119,4 +120,4 @@ if __name__ == "__main__":
     # cli([agent_config, network, service, sim_config, '1', '-t', '2021-01-07_13-00-43_seed1234'])
 
     # training & testing for 1 episodes
-    cli([agent_config, network, service, sim_config, '40', '--append-test'])
+    cli([agent_config, network, service, sim_config, '500', '--append-test'])

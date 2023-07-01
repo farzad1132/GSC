@@ -17,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.rlsp.agents.agent_helper import AgentHelper
-from src.rlsp.agents.models import Actor, QNetwork
+from src.rlsp.agents.models import Actor, QNetwork, GSCActor, GSCCritic, NNConvActor, NNConvCritic
 from src.rlsp.utils.util_functions import (graph_to_dict, simple_make_env,
                                            torch_stack_to_graph_batch)
 
@@ -70,10 +70,21 @@ class SimpleDDPG:
 
         
     def _init_networks(self):
-        self.actor = Actor(self.agent_helper).to(self.device)
-        self.qf1 = QNetwork(self.agent_helper).to(self.device)
-        self.qf1_target = QNetwork(self.agent_helper).to(self.device)
-        self.target_actor = Actor(self.agent_helper).to(self.device)
+        if self.agent_helper.config["graph_mode"]:
+            """ self.actor = GSCActor(self.agent_helper).to(self.device)
+            self.target_actor = GSCActor(self.agent_helper).to(self.device)
+            self.qf1 = GSCCritic(self.agent_helper).to(self.device)
+            self.qf1_target = GSCCritic(self.agent_helper).to(self.device) """
+            self.actor = NNConvActor(self.agent_helper).to(self.device)
+            self.target_actor = NNConvActor(self.agent_helper).to(self.device)
+            self.qf1 = NNConvCritic(self.agent_helper).to(self.device)
+            self.qf1_target = NNConvCritic(self.agent_helper).to(self.device)
+        else:
+            self.actor = Actor(self.agent_helper).to(self.device)
+            self.target_actor = Actor(self.agent_helper).to(self.device)
+            self.qf1 = QNetwork(self.agent_helper).to(self.device)
+            self.qf1_target = QNetwork(self.agent_helper).to(self.device)
+        
         self.target_actor.load_state_dict(self.actor.state_dict())
         self.qf1_target.load_state_dict(self.qf1.state_dict())
         self.q_optimizer = optim.Adam(list(self.qf1.parameters()), lr=self.agent_helper.config['learning_rate'])
@@ -114,6 +125,12 @@ class SimpleDDPG:
                 actions = actions.clip(self.env.action_space.low, self.env.action_space.high)
         
         return np.squeeze(actions)
+
+    def _set_models_in_train_mode(self):
+        self.actor.train()
+        self.target_actor.train()
+        self.qf1.train()
+        self.qf1_target.train()
     
 
     def _update_critic(self, next_obs, cur_obs, dones, rewards, actions):
@@ -199,10 +216,11 @@ class SimpleDDPG:
         obs, _ = self.env.reset()
         for global_step in tqdm(range(self.agent_helper.episode_steps*episodes)):
             # ALGO LOGIC: put action logic here
+            self.actor.eval()
             actions = self._choose_action(obs, global_step)
             
             # Post-processing: Threshold + Normalization
-            actions = self.post_process_actions(actions)
+            # actions = self.post_process_actions(np.squeeze(actions))
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, rewards, dones, _, infos = self.env.step(actions)
@@ -219,8 +237,8 @@ class SimpleDDPG:
             # ALGO LOGIC: training.
             # Train frequency: (1, "episode")
             if global_step % self.agent_helper.episode_steps == self.agent_helper.episode_steps-1:
-                # TODO: train/test on/off for models
                 if global_step >= self.agent_helper.config['nb_steps_warmup_critic']-1:
+                    self._set_models_in_train_mode()
 
                     # Multiple gradient steps
                     for _ in range(self.agent_helper.episode_steps):
@@ -243,6 +261,7 @@ class SimpleDDPG:
     
     @th.no_grad()
     def predict(self, obs):
+        self.actor.eval()
         if self.agent_helper.config["graph_mode"]:
             return self.actor(obs)
         else:

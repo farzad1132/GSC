@@ -8,7 +8,10 @@ from typing import Tuple
 
 import networkx as nx
 import numpy as np
-from torch_geometric.utils import from_networkx
+from torch_geometric.utils import from_networkx, to_networkx
+from torch_geometric.data import Data
+from torch_geometric.utils import softmax
+import torch as th
 
 from siminterface.simulator import Simulator
 from spinterface import SimulatorAction, SimulatorState
@@ -39,6 +42,7 @@ class SimulatorWrapper:
         self.observations_space = observations_space
         self.graph_mode = graph_mode
         self.link_obs_space = link_obs_space
+        self.last_edge_index = None
 
     def init(self, seed) -> Tuple[object, SimulatorState]:
         """Creates a new simulation environment.
@@ -92,6 +96,7 @@ class SimulatorWrapper:
             sf_index = sf_index + 1
 
         obs = self._parse_state_as_graph(init_state) if self.graph_mode else self._parse_state(init_state)
+        self.last_edge_index = obs.edge_index
         return obs, init_state
 
     def add_placement_recursive(self, source_node, sf_id, sfc, schedule, placement):
@@ -126,7 +131,38 @@ class SimulatorWrapper:
                     # call this function for target node and next service function
                     self.add_placement_recursive(target_node, sf_id + 1, sfc, schedule, placement)
 
-    def apply(self, action_array: np.ndarray) -> Tuple[object, SimulatorState]:
+    def _calculate_ptr(self, arr: th.Tensor) -> th.Tensor:
+        cur_value = None
+        out = []
+        for index, value in enumerate(arr[0, :]):
+            if value != cur_value:
+                cur_value = value
+                out.append(index)
+        
+        out.append(arr.shape[1])
+        return th.tensor(out, dtype=th.int64)
+    
+    def _edge_value_to_action_array(self, edge_values: th.Tensor) -> np.ndarray:
+        data = Data(edge_index=self.last_edge_index, edge_attr=edge_values, x=th.zeros(len(self.node_map),1))
+        net = to_networkx(data, edge_attrs=["edge_attr"])
+        action_array = np.zeros(self.env_limits.scheduling_shape)
+        for src, dst, value in net.edges(data=True):
+            for _, sf_idx in self.sf_map.items():
+                action_array[src][0][sf_idx][dst] = value["edge_attr"][sf_idx]
+        
+        return action_array.flatten()
+    
+    
+    def _process_graph_edge_values(self, edge_values: th.Tensor) -> np.ndarray:
+        ptr = self._calculate_ptr(self.last_edge_index)
+        edge_values = softmax(edge_values, ptr=ptr, dim=0)
+
+        return self._edge_value_to_action_array(edge_values), edge_values
+        
+        
+    
+    def apply(self, action_array: np.ndarray, edge_values: th.Tensor = None) \
+                -> Tuple[object, SimulatorState]:
         """
         Encapsulates the simulators apply method to use the gym interface
 
@@ -142,6 +178,8 @@ class SimulatorWrapper:
         vectorized_state: dict
         state: SimulatorState
         """
+        if self.graph_mode:
+            action_array, _ = self._process_graph_edge_values(edge_values)
         logger.debug(f"Action array (NN output + noise, normalized): {action_array}")
         action_processor = ActionScheduleProcessor(self.env_limits.MAX_NODE_COUNT, self.env_limits.MAX_SF_CHAIN_COUNT,
                                                    self.env_limits.MAX_SERVICE_FUNCTION_COUNT)
@@ -175,7 +213,7 @@ class SimulatorWrapper:
         state = self.simulator.apply(simulator_action)
 
         obs = self._parse_state_as_graph(state) if self.graph_mode else self._parse_state(state)
-
+        self.last_edge_index = obs.edge_index
         return obs, state
 
     def _parse_state(self, state: SimulatorState) -> np.ndarray:
