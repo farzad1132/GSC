@@ -146,6 +146,8 @@ class SimulatorWrapper:
         data = Data(edge_index=self.last_edge_index, edge_attr=edge_values, x=th.zeros(len(self.node_map),1))
         net = to_networkx(data, edge_attrs=["edge_attr"])
         action_array = np.zeros(self.env_limits.scheduling_shape)
+        
+        # TODO: check this conversion process
         for src, dst, value in net.edges(data=True):
             for _, sf_idx in self.sf_map.items():
                 action_array[src][0][sf_idx][dst] = value["edge_attr"][sf_idx]
@@ -154,8 +156,9 @@ class SimulatorWrapper:
     
     
     def _process_graph_edge_values(self, edge_values: th.Tensor) -> np.ndarray:
-        ptr = self._calculate_ptr(self.last_edge_index)
-        edge_values = softmax(edge_values, ptr=ptr, dim=0)
+        # We do not need softmax over edge values at the moment
+        """ ptr = self._calculate_ptr(self.last_edge_index)
+        edge_values = softmax(edge_values, ptr=ptr, dim=0) """
 
         return self._edge_value_to_action_array(edge_values), edge_values
         
