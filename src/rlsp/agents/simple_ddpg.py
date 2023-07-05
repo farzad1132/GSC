@@ -112,7 +112,9 @@ class SimpleDDPG:
         else:
             with th.no_grad():
                 if self.agent_helper.config["graph_mode"]:
-                    actions = self.actor(obs.to(self.device))
+                    for value in obs.node_feature.values():
+                        value.to(self.device) 
+                    actions = self.actor(obs)
                 else:
                     actions = self.actor(th.Tensor(obs).view(1, -1).to(self.device))
                 actions = actions.cpu().numpy()
@@ -171,12 +173,9 @@ class SimpleDDPG:
         """
         if self.agent_helper.config["graph_mode"]:
             next_obs = torch_stack_to_graph_batch(next_observations)
-        else:
-            next_obs = next_observations
-
-        if self.agent_helper.config["graph_mode"]:
             cur_obs = torch_stack_to_graph_batch(observations)
         else:
+            next_obs = next_observations
             cur_obs = observations
 
         return cur_obs, next_obs

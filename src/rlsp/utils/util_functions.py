@@ -1,10 +1,11 @@
 """
 RLSP utility functions module
 """
-from typing import Dict
+from typing import Dict, List
 
 import gym
-from torch_geometric.data import Batch, Data
+from deepsnap.hetero_graph import HeteroGraph
+from torch_geometric.data import Batch, Data, HeteroData
 
 from src.rlsp.agents.agent_helper import AgentHelper
 from src.rlsp.envs.gym_env import AutoResetWithSeed, GymEnv
@@ -76,22 +77,42 @@ def simple_make_env(agent_helper: AgentHelper):
     env = gym.wrappers.RecordEpisodeStatistics(env)
     return env
 
+def snap_to_geom(nodes, adj) -> HeteroData:
+    data = HeteroData()
+    for key in nodes.keys():
+        data[key].x = nodes[key]
+
+    for key in adj.keys():
+        a, b, c = key
+        data[a, b, c].edge_index = adj[key]
+    return data
+
 def torch_stack_to_graph_batch(obs: Dict) -> Batch:
     """
         This function converts stacked arrays to pytorch_geometric's Batch object
     """
     data_list = []
-    for i in range(obs["adj"].shape[0]):
-        data = Data(x=obs["nodes"][i, :], edge_index=obs["adj"][i, :, :], edge_attr=obs["edges"][i, :])
+    for i in range(obs["node"].shape[0]):
+        data = snap_to_geom(
+            nodes={
+                "node": obs["node"][i, :, :],
+                "link": obs["link"][i, :, :]
+            },
+            adj={
+                ("node", "nl", "link"): obs[("node", "nl", "link")][i, :, :],
+                ("link", "ln", "node"): obs[("link", "ln", "node")][i, :, :]
+            }
+        )
         data_list.append(data)
     return Batch.from_data_list(data_list)
 
-def graph_to_dict(data: Data) -> Dict:
+def graph_to_dict(data: HeteroGraph) -> Dict:
     """
         This function converts graph obs to dict obs to be stored in buffer
     """
     return {
-        "nodes": data.x,
-        "edges": data.edge_attr,
-        "adj": data.edge_index
+        "node": data.node_feature["node"],
+        "link": data.node_feature["link"],
+        ("node", "nl", "link"): data.edge_index[("node", "nl", "link")],
+        ("link", "ln", "node"): data.edge_index[("link", "ln", "node")]
     }

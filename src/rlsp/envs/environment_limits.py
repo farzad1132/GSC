@@ -83,12 +83,16 @@ class EnvironmentLimits:
             node_shape = (self.observation_space_len * node_load_size,)
             return spaces.Box(low=0, high=1, shape=node_shape, dtype=np.float32)
         else:
-            return spaces.Dict(spaces={
-                "nodes": spaces.Box(low=0, high=1, shape=(self.MAX_NODE_COUNT, self.observation_space_len), dtype=np.float32),
-                "edges":  spaces.Box(low=0, high=1, shape=(self.num_edges,
+            return spaces.Dict(
+                spaces={
+                    "node": spaces.Box(low=0, high=1, shape=(self.MAX_NODE_COUNT, self.observation_space_len),
+                                                dtype=np.float32),
+                    "link": spaces.Box(low=0, high=1, shape=(self.num_edges,
                                         self.link_obs_space_len+2+self.MAX_SERVICE_FUNCTION_COUNT), dtype=np.float32),
-                "adj": spaces.Box(0, 100000, shape=(2, self.num_edges), dtype=np.int64) 
-            })
+                    ('node', 'nl', 'link'): spaces.Box(0, 100000, shape=(2, self.num_edges), dtype=np.int64),
+                    ('link', 'ln', 'node'): spaces.Box(0, 100000, shape=(2, self.num_edges), dtype=np.int64)
+                }
+            )
 
     def create_filled_node_load_array(self, default=0.0) -> np.ndarray:
         """creates an array with shape and type of the node_load array.

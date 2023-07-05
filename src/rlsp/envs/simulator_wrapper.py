@@ -4,14 +4,15 @@ This module contains the SimulatorWrapper class.
 """
 import logging
 from copy import deepcopy
-from typing import Tuple
+from typing import List, Tuple
 
 import networkx as nx
 import numpy as np
-from torch_geometric.utils import from_networkx, to_networkx
-from torch_geometric.data import Data
-from torch_geometric.utils import softmax
 import torch as th
+from deepsnap.hetero_graph import HeteroGraph
+from torch_geometric.data import Data
+from torch_geometric.utils import (from_networkx, softmax, sort_edge_index,
+                                   to_networkx)
 
 from siminterface.simulator import Simulator
 from spinterface import SimulatorAction, SimulatorState
@@ -20,6 +21,73 @@ from src.rlsp.envs.environment_limits import EnvironmentLimits
 
 logger = logging.getLogger(__name__)
 
+def homo_to_hetero(G: nx.DiGraph, node_features: List[str], link_features: List[str]) -> nx.DiGraph:
+    """This utility function converts a homogeneous nx.DiGraph to a heterogeneous nx.DiGraph
+    """
+    net = nx.DiGraph(G)
+    from copy import deepcopy
+
+    index = 0
+    remove_edges = []
+    add_nodes = []
+    add_edges = []
+    for u, v, data in net.edges(data=True):
+        remove_edges.append((u, v))
+        label = f"L{index}"
+        index += 1
+        features = []
+        for feat in link_features:
+            if not feat in data:
+                raise Exception(f"Feature `{feat}` not found in link data")
+            if isinstance(data[feat], list):
+                features.extend(data[feat])
+            else:
+                features.append(data[feat])
+        add_nodes.append((label, {"node_type": "link", "node_feature": th.tensor(features)}))
+        add_edges.append((u, label, {"edge_type": "nl"}))
+        add_edges.append((label, v, {"edge_type": "ln"}))
+    
+    for u, data in net.nodes(data=True):
+        features = []
+        for feat in node_features:
+            if not feat in data:
+                raise Exception(f"Feature `{feat}` not found in node data")
+            if isinstance(data[feat], list):
+                features.extend(data[feat])
+            else:
+                features.append(data[feat])
+            del data[feat]
+        net.add_node(u, node_type="node", node_feature=th.tensor(features))
+
+    net = nx.DiGraph(net)
+    net.remove_edges_from(remove_edges)
+    net.add_nodes_from(add_nodes)
+    net.add_edges_from(add_edges)
+    return net
+
+def assign_value_to_links(values: th.Tensor, G: nx.DiGraph) -> nx.DiGraph:
+    net = nx.DiGraph(G)
+    index = 0
+    for _, data in net.nodes(data=True):
+        if data["node_type"] == "link":
+            data["value"] = values[index, :]
+            index += 1
+    return net
+
+def hetero_to_homo(G: nx.DiGraph) -> nx.DiGraph:
+    net = nx.DiGraph()
+
+    from copy import deepcopy
+
+    for u, data in G.nodes(data=True):
+        if data["node_type"] == "node":
+            net.add_node(u, **deepcopy(data))
+        elif data["node_type"] == "link":
+            src = list(G.in_edges(u))[0][0]
+            dst = list(G.out_edges(u))[0][1]
+            net.add_edge(src, dst, **deepcopy(data))
+    
+    return net
 
 class SimulatorWrapper:
     """
@@ -43,6 +111,7 @@ class SimulatorWrapper:
         self.graph_mode = graph_mode
         self.link_obs_space = link_obs_space
         self.last_edge_index = None
+        self.last_het_graph = None
 
     def init(self, seed) -> Tuple[object, SimulatorState]:
         """Creates a new simulation environment.
@@ -143,14 +212,14 @@ class SimulatorWrapper:
         return th.tensor(out, dtype=th.int64)
     
     def _edge_value_to_action_array(self, edge_values: th.Tensor) -> np.ndarray:
-        data = Data(edge_index=self.last_edge_index, edge_attr=edge_values, x=th.zeros(len(self.node_map),1))
-        net = to_networkx(data, edge_attrs=["edge_attr"])
+        net = assign_value_to_links(edge_values, self.last_het_graph)
+        net = hetero_to_homo(net)
         action_array = np.zeros(self.env_limits.scheduling_shape)
-        
+
         # TODO: check this conversion process
         for src, dst, value in net.edges(data=True):
             for _, sf_idx in self.sf_map.items():
-                action_array[src][0][sf_idx][dst] = value["edge_attr"][sf_idx]
+                action_array[self.node_map[src]][0][sf_idx][self.node_map[dst]] = value["value"][sf_idx]
         
         return action_array.flatten()
     
@@ -275,7 +344,7 @@ class SimulatorWrapper:
         """
 
         # Making a copy from simulator's network object, so to not interfere with simulator job
-        net: nx.Graph = deepcopy(self.simulator.network)
+        net: nx.DiGraph = deepcopy(self.simulator.network)
         
         # Deleting dict attributes (We don't need them in our GraphState)
         for (_,d) in net.nodes(data=True):
@@ -345,12 +414,18 @@ class SimulatorWrapper:
             for src, dst, prop in net.edges(data=True):
                     prop["link_load"] = link_load[self.edge_map[(src, dst)]]
 
-        # Using pytorch_geometric utility to convert networkx's Graph to pytorch_geometric's Data
-        data = from_networkx(net,
-                            group_node_attrs=group_node_attrs,
-                            group_edge_attrs=group_edge_attrs)
+        # converting homogeneous nx graph to heterogeneous one
+        self.last_het_graph = homo_to_hetero(net,
+                                    node_features=group_node_attrs,
+                                    link_features=group_edge_attrs)
         
-        return data
+        # converting nx graph to DeepSNAP data structures (very similar to geometric data structure)
+        obs = HeteroGraph(self.last_het_graph)
+
+        # sorting edge_index to avoid future problems in GNN
+        obs.edge_index = {key: sort_edge_index(value, sort_by_row=False) for key, value in obs.edge_index.items()}
+
+        return obs
     
     def permute_node_order(self, state, perm=None):
         """

@@ -16,6 +16,7 @@ from typing import Tuple
 import gym
 import numpy as np
 import torch as th
+from deepsnap.hetero_graph import HeteroGraph
 from torch_geometric.data import Data
 from torch_geometric.utils import softmax
 
@@ -130,12 +131,12 @@ class GymEnv(gym.Env):
         logger.info(f"min_delay: {min_delay}, max_delay: {max_delay}, diameter: {self.network_diameter}")
         return min_delay, max_delay
 
-    def _post_append_gsc_obs(self, obs: Data) -> Data:
+    def _post_append_gsc_obs(self, obs: HeteroGraph) -> HeteroGraph:
         target_edge_vec = th.zeros(self.env_limits.num_edges, 1)
         target_edge_vec[self.next_target_edge, 0] = 1
-        obs.edge_attr = th.cat(
+        obs.node_feature['link'] = th.cat(
             [
-                obs.edge_attr,
+                obs.node_feature['link'],
                 self.edge_values,
                 self.edge_flags,
                 target_edge_vec
