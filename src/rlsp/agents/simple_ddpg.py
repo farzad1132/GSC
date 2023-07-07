@@ -56,7 +56,7 @@ class SimpleDDPG:
 
         self._init_networks()
 
-        self.batch_size = 100
+        self.batch_size = self.agent_helper.config["batch_size"]
         self.policy_frequency = 1
         self.n_action = self.env.action_space.shape[-1]
         
@@ -68,6 +68,8 @@ class SimpleDDPG:
             handle_timeout_termination=False,
         )
 
+        self.ep_counter = 0
+        self.avg_rew_ep = 0
         
     def _init_networks(self):
         if self.agent_helper.config["graph_mode"]:
@@ -179,11 +181,13 @@ class SimpleDDPG:
     def _update_episode_metrics(self, infos, new_best_reward, global_step):
         if "final_info" in infos:
             ep_reward = float(f"{infos['episode']['r']:0.3f}")
+            self.ep_counter += 1
+            self.avg_rew_ep = self.avg_rew_ep + (1/self.ep_counter)*(ep_reward-self.avg_rew_ep)
             if ep_reward > new_best_reward:
                 new_best_reward = ep_reward
-                tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}, NEW best reward")
+                tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}, average_return={self.avg_rew_ep:0.2f} NEW best reward")
             else:
-                tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}")
+                tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}, average_return={self.avg_rew_ep:0.2f}")
             self.writer.add_scalar("charts/episodic_return", infos["episode"]["r"], global_step)
             self.writer.add_scalar("charts/episodic_length", infos["episode"]["l"], global_step)
         
