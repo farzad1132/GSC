@@ -183,7 +183,7 @@ class BaseGCN(MessagePassing):
                 from torch.nn import GRU
                 self.fn_update = GRU(out_channel+in_channel, out_channel, batch_first=True)
             else:
-                raise Exception("unsupported update function")
+                raise Exception(f"unsupported update function '{update}'")
         if self.message_str is not None:
             if self.message_str == "mlp":
                 from torch_geometric.nn import MLP
@@ -250,37 +250,29 @@ class CascadeMLPAggregation(Aggregation):
                 f'{self.out_channels})')
 
 class HeteroGNN(nn.Module):
-    def __init__(self, hidden_dim, num_layers):
+    def __init__(self, hidden_dim: int, num_iter: int, aggr: str,
+                message: str = None, update: str = None):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.convs = th.nn.ModuleList()
-        self.norms = th.nn.ModuleList()
-        for i in range(num_layers):
-            self.norms.append(
-                th.nn.ModuleDict(
-                    {
-                        "link": BatchNorm(hidden_dim),
-                        "node": BatchNorm(hidden_dim)
-                    }
-                ))
+        for i in range(num_iter):
             conv = HeteroConv({
                 ("node", "nl", "link"): BaseGCN(hidden_dim, hidden_dim,
-                                        aggr="mean",
-                                        update="mlp",
-                                        message_str=None),
+                                        aggr=aggr,
+                                        update=update,
+                                        message_str=message),
                 ("link", "ln", "node"): BaseGCN(hidden_dim, hidden_dim,
-                                        aggr="mean",
-                                        update="mlp",
-                                        message_str=None)
+                                        aggr=aggr,
+                                        update=update,
+                                        message_str=message)
             }, aggr="sum")
             self.convs.append(conv)
     
     def forward(self, x_dict, edge_index_dict, batch_dict):
         x_dict = {key: th.nn.functional.pad(value, pad=(0, self.hidden_dim-value.size()[1]),
                                             mode='constant', value=0) for key, value in x_dict.items()}
-        for conv, norm in zip(self.convs, self.norms):
+        for conv in self.convs:
             x_dict = conv(x_dict, edge_index_dict)
-            #x_dict = {key: norm[key](x) for key, x in x_dict.items()}
             x_dict = {key: x.relu() for key, x in x_dict.items()}
         if batch_dict is None:
             return x_dict["link"]
@@ -293,23 +285,27 @@ class GSCActor(nn.Module):
         super().__init__()
 
         self.agent_helper = agent_helper
-        hidden_layers = agent_helper.config["actor_hidden_layer_nodes"]
-        obs_space = agent_helper.env.observation_space
+        hidden_layers: list = agent_helper.config["actor_readout_layers"]
+        feature_size = agent_helper.config["GNN_features"]
+        embedder_layers = agent_helper.config["GNN_layers"]
         action_space = agent_helper.env.action_space
 
-        # TODO: config these from the config file
-        feature_size = 20
-        embedder_layers = 3
-        readout_layers = len(hidden_layers)
-        readout_hid_dim = hidden_layers[0]
+        readout_layers = hidden_layers.copy()
+        readout_layers.insert(0, feature_size)
+        readout_layers.append(np.prod(action_space.shape))
 
-        self.embedder = HeteroGNN(feature_size, embedder_layers)
+        message = self.agent_helper.config["GNN_message"]
+        if message == "None":
+            message = None
+        aggr = self.agent_helper.config["GNN_aggr"]
+        update = self.agent_helper.config["GNN_update"]
+        if update == "None":
+            update = None
+        self.embedder = HeteroGNN(feature_size, embedder_layers, aggr=aggr,
+                                message=message, update=update)
 
         self.readout = MLP(
-            in_channels=feature_size,
-            out_channels=np.prod(action_space.shape),
-            num_layers=readout_layers,
-            hidden_channels=readout_hid_dim,
+            channel_list=readout_layers,
             norm=None
         )
 
@@ -351,23 +347,26 @@ class GSCCritic(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
         super().__init__()
         self.agent_helper = agent_helper
-        hidden_layers = agent_helper.config["critic_hidden_layer_nodes"]
-        obs_space = agent_helper.env.observation_space
-        action_space = agent_helper.env.action_space
+        hidden_layers: list = agent_helper.config["critic_readout_layers"]
+        feature_size = agent_helper.config["GNN_features"]
+        embedder_layers = agent_helper.config["GNN_layers"]
 
-        # TODO: config these from the config file
-        feature_size = 20
-        embedder_layers = 3
-        readout_layers = len(hidden_layers)
-        readout_hid_dim = hidden_layers[0]
+        readout_layers = hidden_layers.copy()
+        readout_layers.insert(0, feature_size)
+        readout_layers.append(1)
 
-        self.embedder = HeteroGNN(feature_size, embedder_layers)
+        message = self.agent_helper.config["GNN_message"]
+        if message == "None":
+            message = None
+        aggr = self.agent_helper.config["GNN_aggr"]
+        update = self.agent_helper.config["GNN_update"]
+        if update == "None":
+            update = None
+        self.embedder = HeteroGNN(feature_size, embedder_layers, aggr=aggr,
+                                message=message, update=update)
 
         self.readout = MLP(
-            in_channels=feature_size,
-            out_channels=1,
-            num_layers=readout_layers,
-            hidden_channels=readout_hid_dim,
+            channel_list=readout_layers,
             norm=None
         )
 

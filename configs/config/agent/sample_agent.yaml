@@ -25,11 +25,16 @@ episode_steps: 18
 agent_type: "DDPG"
 
 # NN Config for actor and critic
-actor_hidden_layer_nodes: [128] # Array with nodes for each layer
+GNN_features: 10
+GNN_layers: 2
+GNN_message: mlp
+GNN_aggr: sum
+GNN_update: None
+GNN_share: False
+actor_readout_layers: [128] # Array with nodes for each layer
 actor_hidden_layer_activation: "relu"
-critic_hidden_layer_nodes: [64] # Array with nodes for each layer
+critic_readout_layers: [64] # Array with nodes for each layer
 critic_hidden_layer_activation: "relu"
-critic_feature_size: 12
 
 # objective and reward
 objective: 'weighted'

@@ -17,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from src.rlsp.agents.agent_helper import AgentHelper
-from src.rlsp.agents.models import Actor, QNetwork, GSCActor, GSCCritic, NNConvActor, NNConvCritic
+from src.rlsp.agents.models import Actor, QNetwork, GSCActor, GSCCritic
 from src.rlsp.utils.util_functions import (graph_to_dict, simple_make_env,
                                            torch_stack_to_graph_batch)
 
