@@ -71,14 +71,10 @@ class SimpleDDPG:
         
     def _init_networks(self):
         if self.agent_helper.config["graph_mode"]:
-            """ self.actor = GSCActor(self.agent_helper).to(self.device)
+            self.actor = GSCActor(self.agent_helper).to(self.device)
             self.target_actor = GSCActor(self.agent_helper).to(self.device)
             self.qf1 = GSCCritic(self.agent_helper).to(self.device)
-            self.qf1_target = GSCCritic(self.agent_helper).to(self.device) """
-            self.actor = NNConvActor(self.agent_helper).to(self.device)
-            self.target_actor = NNConvActor(self.agent_helper).to(self.device)
-            self.qf1 = NNConvCritic(self.agent_helper).to(self.device)
-            self.qf1_target = NNConvCritic(self.agent_helper).to(self.device)
+            self.qf1_target = GSCCritic(self.agent_helper).to(self.device)
         else:
             self.actor = Actor(self.agent_helper).to(self.device)
             self.target_actor = Actor(self.agent_helper).to(self.device)
@@ -215,7 +211,6 @@ class SimpleDDPG:
         obs, _ = self.env.reset()
         for global_step in tqdm(range(self.agent_helper.episode_steps*episodes)):
             # ALGO LOGIC: put action logic here
-            self.actor.eval()
             actions = self._choose_action(obs, global_step)
             
             # Post-processing: Threshold + Normalization
@@ -237,7 +232,6 @@ class SimpleDDPG:
             # Train frequency: (1, "episode")
             if global_step % self.agent_helper.episode_steps == self.agent_helper.episode_steps-1:
                 if global_step >= self.agent_helper.config['nb_steps_warmup_critic']-1:
-                    self._set_models_in_train_mode()
 
                     # Multiple gradient steps
                     for _ in range(self.agent_helper.episode_steps):
@@ -260,7 +254,6 @@ class SimpleDDPG:
     
     @th.no_grad()
     def predict(self, obs):
-        self.actor.eval()
         if self.agent_helper.config["graph_mode"]:
             return self.actor(obs)
         else:
