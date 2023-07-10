@@ -221,8 +221,8 @@ class GymEnv(gym.Env):
             info (dict): contains auxiliary diagnostic information (helpful for debugging, and sometimes learning)
         """
         done = False
-        self.run_count += 1
         self._update_gsc_inner_state(action)
+        self.run_count += 1
         logger.debug(f"Action array (NN output + noise, normalized): {action}")
 
         # reverse action order using permutation from previous state shuffle
