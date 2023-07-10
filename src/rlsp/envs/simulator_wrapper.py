@@ -165,7 +165,8 @@ class SimulatorWrapper:
             sf_index = sf_index + 1
 
         obs = self._parse_state_as_graph(init_state) if self.graph_mode else self._parse_state(init_state)
-        self.last_edge_index = obs.edge_index
+        if self.graph_mode:
+            self.last_edge_index = obs.edge_index
         return obs, init_state
 
     def add_placement_recursive(self, source_node, sf_id, sfc, schedule, placement):
