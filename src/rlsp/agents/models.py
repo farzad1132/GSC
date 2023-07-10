@@ -250,10 +250,11 @@ class CascadeMLPAggregation(Aggregation):
                 f'{self.out_channels})')
 
 class HeteroGNN(nn.Module):
-    def __init__(self, hidden_dim: int, num_iter: int, aggr: str,
+    def __init__(self, hidden_dim: int, num_iter: int, aggr: str, pool: str,
                 message: str = None, update: str = None):
         super().__init__()
         self.hidden_dim = hidden_dim
+        self.pool = pool
         self.convs = th.nn.ModuleList()
         for i in range(num_iter):
             conv = HeteroConv({
@@ -268,17 +269,41 @@ class HeteroGNN(nn.Module):
             }, aggr="sum")
             self.convs.append(conv)
     
+    def local_pool(self, ptr, x, edge_index_dict):
+        index = (ptr == 1).nonzero()
+        link_feat = x["link"][index[:, 0], :]
+
+        nl = edge_index_dict[("node", "nl", "link")]
+        ln = edge_index_dict[("link", "ln", "node")]
+        
+        sorted_ln, ln_indices = th.sort(ln[0, :])
+        to_node_mask = th.searchsorted(sorted_ln, index[:, 0])
+        to_node_mask = ln_indices[to_node_mask]
+
+        sorted_nl, nl_indices = th.sort(nl[1, :])
+        from_node_mask = th.searchsorted(sorted_nl, index[:, 0])
+        from_node_mask = nl_indices[from_node_mask]
+
+        to_node_index = ln[1, to_node_mask]
+        from_node_index = nl[0, from_node_mask]
+
+        to_node = x["node"][to_node_index]
+        from_node = x["node"][from_node_index]
+
+        return th.cat([link_feat, to_node, from_node], dim=1)
+    
     def forward(self, x_dict, edge_index_dict, batch_dict):
+        ptr = x_dict["link"][:, -1]
         x_dict = {key: th.nn.functional.pad(value, pad=(0, self.hidden_dim-value.size()[1]),
                                             mode='constant', value=0) for key, value in x_dict.items()}
         for conv in self.convs:
             x_dict = conv(x_dict, edge_index_dict)
             x_dict = {key: x.relu() for key, x in x_dict.items()}
-        if batch_dict is None:
-            return x_dict["link"]
-        else:
-            # TODO: check pooling (maybe another one be more effective)
+
+        if self.pool == "global":
             return global_mean_pool(x_dict["link"], batch_dict)
+        elif self.pool == "local":
+            return self.local_pool(ptr, x_dict, edge_index_dict)
 
 class GSCActor(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
@@ -291,7 +316,7 @@ class GSCActor(nn.Module):
         action_space = agent_helper.env.action_space
 
         readout_layers = hidden_layers.copy()
-        readout_layers.insert(0, feature_size)
+        readout_layers.insert(0, feature_size*3)
         readout_layers.append(np.prod(action_space.shape))
 
         message = self.agent_helper.config["GNN_message"]
@@ -302,7 +327,7 @@ class GSCActor(nn.Module):
         if update == "None":
             update = None
         self.embedder = HeteroGNN(feature_size, embedder_layers, aggr=aggr,
-                                message=message, update=update)
+                                message=message, update=update, pool="local")
 
         self.readout = MLP(
             channel_list=readout_layers,
@@ -363,7 +388,7 @@ class GSCCritic(nn.Module):
         if update == "None":
             update = None
         self.embedder = HeteroGNN(feature_size, embedder_layers, aggr=aggr,
-                                message=message, update=update)
+                                message=message, update=update, pool="global")
 
         self.readout = MLP(
             channel_list=readout_layers,
