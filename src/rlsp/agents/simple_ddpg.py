@@ -259,9 +259,14 @@ class SimpleDDPG:
     @th.no_grad()
     def predict(self, obs):
         if self.agent_helper.config["graph_mode"]:
-            return self.actor(obs)
+            for value in obs.node_feature.values():
+                value.to(self.device)
+                actions = self.actor(obs)
         else:
-            return self.actor(th.tensor(obs, dtype=th.float32).view(1, -1))
+            actions = self.actor(th.tensor(obs, dtype=th.float32).view(1, -1))
+        actions = actions.cpu().numpy()
+        actions = actions.clip(self.env.action_space.low, self.env.action_space.high)
+        return np.squeeze(actions)
 
     def normalize_scheduling_probabilities(self, input_list: list) -> list:
 

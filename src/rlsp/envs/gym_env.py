@@ -202,6 +202,24 @@ class GymEnv(gym.Env):
             obs = self._post_append_gsc_obs(obs)
 
         return obs, {}
+    
+    def big_step(self, action: th.Tensor):
+        done = False
+        self._update_gsc_inner_state(action)
+        self.run_count += 1
+        
+
+        if self.run_count == self.agent_config['episode_steps']:
+            obs, self.current_simulator_state = self.simulator_wrapper.apply(action, self.edge_values)
+            reward = self.calculate_reward(self.current_simulator_state)
+            done = True
+            self.run_count = 0
+            obs = self._post_append_gsc_obs(obs)
+            return obs, reward, done, False, {}
+        else:
+            
+            return None
+
 
     def step(self, action: np.ndarray) -> Tuple[object, float, bool, dict]:
 
