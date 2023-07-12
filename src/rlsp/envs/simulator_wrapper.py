@@ -286,7 +286,8 @@ class SimulatorWrapper:
         state = self.simulator.apply(simulator_action)
 
         obs = self._parse_state_as_graph(state) if self.graph_mode else self._parse_state(state)
-        self.last_edge_index = obs.edge_index
+        if self.graph_mode:
+            self.last_edge_index = obs.edge_index
         return obs, state
 
     def _parse_state(self, state: SimulatorState) -> np.ndarray:

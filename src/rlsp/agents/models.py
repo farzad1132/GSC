@@ -61,21 +61,17 @@ class QNetwork(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
         super().__init__()
         self.agent_helper = agent_helper
-        hidden_layers = agent_helper.config["critic_hidden_layer_nodes"]
+        hidden_layers = agent_helper.config["critic_readout_layers"]
         obs_space = agent_helper.env.observation_space
         action_space = agent_helper.env.action_space
 
         ## Feature extractor
-        if agent_helper.config["critic_feature_size"] is not None:
-            feature_size = int(agent_helper.config["critic_feature_size"])
-        else:
-            feature_size = np.array(obs_space.shape).prod()
-        
-        if self.agent_helper.config["graph_mode"] is True and \
-            agent_helper.config["critic_feature_size"] is not None:
+        if self.agent_helper.config["graph_mode"] is True:
+            feature_size = int(agent_helper.config["GNN_features"])
             self.feature = GNNEmbedder(2, [feature_size], 1)
             self.graph_mode = True
         else:
+            feature_size = np.array(obs_space.shape).prod()
             self.graph_mode = False
 
         self.critic = nn.ModuleList()
@@ -103,7 +99,7 @@ class Actor(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
         super().__init__()
         self.agent_helper = agent_helper
-        hidden_layers = agent_helper.config["actor_hidden_layer_nodes"]
+        hidden_layers = agent_helper.config["actor_readout_layers"]
         obs_space = agent_helper.env.observation_space
         action_space = agent_helper.env.action_space
         self.before_softmax = nn.ModuleList()
@@ -112,8 +108,9 @@ class Actor(nn.Module):
         feature_size = 22
         self.feature = GNNEmbedder(2, [feature_size], 1)
         
+        input_readout = np.prod(obs_space.shape) if not self.agent_helper.config["graph_mode"] else feature_size
         if len(hidden_layers) > 0:
-            self.before_softmax.append(nn.Linear(feature_size, hidden_layers[0]))
+            self.before_softmax.append(nn.Linear(input_readout, hidden_layers[0]))
             self.before_softmax.append(nn.ReLU())
         if len(hidden_layers) >= 2:
             for i in range(len(hidden_layers)-1):

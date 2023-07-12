@@ -12,7 +12,7 @@ import torch as th
 import torch.nn.functional as F
 import torch.optim as optim
 import wandb
-from stable_baselines3.common.buffers import DictReplayBuffer
+from stable_baselines3.common.buffers import DictReplayBuffer, ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -60,13 +60,22 @@ class SimpleDDPG:
         self.policy_frequency = 1
         self.n_action = self.env.action_space.shape[-1]
         
-        self.rb = DictReplayBuffer(
-            buffer_size=self.agent_helper.config["mem_limit"],
-            action_space=self.env.action_space,
-            observation_space=self.env.observation_space,
-            device=self.device,
-            handle_timeout_termination=False,
-        )
+        if self.agent_helper.config["graph_mode"]:
+            self.rb = DictReplayBuffer(
+                buffer_size=self.agent_helper.config["mem_limit"],
+                action_space=self.env.action_space,
+                observation_space=self.env.observation_space,
+                device=self.device,
+                handle_timeout_termination=False,
+            )
+        else:
+            self.rb = ReplayBuffer(
+                self.agent_helper.config["mem_limit"],
+                self.env.observation_space,
+                self.env.action_space,
+                self.device,
+                handle_timeout_termination=False,
+            )
 
         self.ep_counter = 0
         self.avg_rew_ep = 0
@@ -204,7 +213,13 @@ class SimpleDDPG:
         real_next_obs = deepcopy(next_obs)
         if dones:
             real_next_obs = infos["final_observation"]
-        self.rb.add(graph_to_dict(obs), graph_to_dict(real_next_obs), actions, rewards, dones, infos)
+        if self.agent_helper.config["graph_mode"]:
+            to_store_obs = graph_to_dict(obs)
+            to_store_nx_obs = graph_to_dict(real_next_obs)
+        else:
+            to_store_obs = obs
+            to_store_nx_obs = real_next_obs
+        self.rb.add(to_store_obs, to_store_nx_obs, actions, rewards, dones, infos)
     
 
     def train(self, episodes: int):

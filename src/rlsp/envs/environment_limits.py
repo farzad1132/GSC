@@ -60,8 +60,10 @@ class EnvironmentLimits:
         """
         # shape is flattened array of scheduling spaces:
         shape_flattened = (np.prod(self.scheduling_shape),)
-
-        return spaces.Box(low=0, high=1, shape=(self.MAX_SERVICE_FUNCTION_COUNT,))
+        if self.graph_mode:
+            return spaces.Box(low=0, high=1, shape=(self.MAX_SERVICE_FUNCTION_COUNT,))
+        else:
+            return spaces.Box(low=0, high=1, shape=shape_flattened)
 
     @property
     def observation_space(self):
