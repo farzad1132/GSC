@@ -151,7 +151,7 @@ class GymEnv(gym.Env):
         self.next_target_edge = (self.next_target_edge+1) % self.env_limits.num_edges
         if self.run_count % self.env_limits.num_edges == 0:
             self.edge_flags = th.zeros(self.env_limits.num_edges, 1)
-            self.edge_values = th.rand(self.env_limits.num_edges, self.env_limits.MAX_SERVICE_FUNCTION_COUNT)
+            self.edge_values = th.zeros(self.env_limits.num_edges, self.env_limits.MAX_SERVICE_FUNCTION_COUNT)
     
     def reset(self, seed: int = None, **kwargs):
         """
@@ -186,7 +186,7 @@ class GymEnv(gym.Env):
         # to get initial state and instantiate
         obs, self.current_simulator_state = self.simulator_wrapper.init(seed)
 
-        self.edge_values = th.rand(self.env_limits.num_edges, self.env_limits.MAX_SERVICE_FUNCTION_COUNT)
+        self.edge_values = th.zeros(self.env_limits.num_edges, self.env_limits.MAX_SERVICE_FUNCTION_COUNT)
         #ptr = self.simulator_wrapper._calculate_ptr(self.simulator_wrapper.last_edge_index)
         #self.init_edge_values = softmax(self.edge_values, ptr=ptr)
         #self.edge_values = self.init_edge_values.cpu().clone()
