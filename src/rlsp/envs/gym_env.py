@@ -146,13 +146,13 @@ class GymEnv(gym.Env):
         return obs
     
     def _update_gsc_inner_state(self, action) -> None:
-        self.edge_values[self.next_target_edge, :] = th.tensor(action)
-        self.edge_flags[self.next_target_edge, 0] = 1
-        self.next_target_edge = (self.next_target_edge+1) % self.env_limits.num_edges
         if self.run_count % self.env_limits.num_edges == 0:
             self.edge_flags = th.zeros(self.env_limits.num_edges, 1)
             self.edge_values = th.zeros(self.env_limits.num_edges, self.env_limits.MAX_SERVICE_FUNCTION_COUNT)
-    
+        self.edge_values[self.next_target_edge, :] = th.tensor(action)
+        self.edge_flags[self.next_target_edge, 0] = 1
+        self.next_target_edge = (self.next_target_edge+1) % self.env_limits.num_edges
+        
     def reset(self, seed: int = None, **kwargs):
         """
         Resets the state of the envs, returning an initial observation.
