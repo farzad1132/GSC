@@ -394,4 +394,5 @@ class GSCCritic(nn.Module):
 
     def forward(self, x, a):
         x = self.embedder(x.x_dict, x.edge_index_dict, x.batch_dict["link"])
+        x = th.cat([x, a], dim=1)
         return self.readout(x)
