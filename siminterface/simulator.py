@@ -74,6 +74,7 @@ class Simulator(SimulatorInterface):
 
     def __del__(self):
         # write dropped flow locs to yaml
+        return
         self.writer.write_dropped_flow_locs(self.metrics.metrics['dropped_flows_locs'])
 
     def init(self, seed):
