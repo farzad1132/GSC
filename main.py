@@ -101,15 +101,23 @@ def cli(agent_config, network, service, sim_config, episodes, seed, test, weight
     )
 
     obs, _ = env.reset(agent_helper.seed)
-    for _ in range(agent_helper.episode_steps):
-        action = agent.predict(obs)
-        obs, _, _, _, _ = env.step(action.numpy().squeeze())
+    for _ in range(200):
+        if agent_helper.config["graph_mode"]:
+            for i in range(env.env_limits.num_edges):
+                action = agent.predict(obs)
+                if i != env.env_limits.num_edges-1:
+                    env.big_step(action)
+                else:
+                    obs, _, _, _, _ = env.big_step(action)
+        else:
+            action = agent.predict(obs)
+            obs, _, _, _, _ = env.step(action)
 
 if __name__ == "__main__":
     agent_config = 'configs/config/agent/sample_agent.yaml'
     #network = 'configs/networks/abilene/abilene-in4-rand-cap1-2.graphml'
     network = "configs/networks/node6/node6-in2-cap1-delay10.graphml"
-    service = 'configs/service_functions/abc.yaml'
+    service = 'configs/service_functions/ab.yaml'
     sim_config = 'configs/config/simulator/sample_config.yaml'
     # sim_config = 'configs/config/simulator/det-mmp-arrival7-3_det-size0_dur100_no_traffic_prediction.yaml'
 
@@ -120,4 +128,4 @@ if __name__ == "__main__":
     # cli([agent_config, network, service, sim_config, '1', '-t', '2021-01-07_13-00-43_seed1234'])
 
     # training & testing for 1 episodes
-    cli([agent_config, network, service, sim_config, '500', '--append-test'])
+    cli([agent_config, network, service, sim_config, '30', '--append-test'])
