@@ -248,23 +248,39 @@ class CascadeMLPAggregation(Aggregation):
 
 class HeteroGNN(nn.Module):
     def __init__(self, hidden_dim: int, num_iter: int, aggr: str, pool: str,
-                message: str = None, update: str = None):
+                message: str = None, update: str = None, shared: bool = False):
         super().__init__()
         self.hidden_dim = hidden_dim
         self.pool = pool
-        self.convs = th.nn.ModuleList()
-        for i in range(num_iter):
-            conv = HeteroConv({
-                ("node", "nl", "link"): BaseGCN(hidden_dim, hidden_dim,
-                                        aggr=aggr,
-                                        update=update,
-                                        message_str=message),
-                ("link", "ln", "node"): BaseGCN(hidden_dim, hidden_dim,
-                                        aggr=aggr,
-                                        update=update,
-                                        message_str=message)
-            }, aggr="sum")
-            self.convs.append(conv)
+        self.shared = shared
+        self.num_iter = num_iter
+        if not shared:
+            self.convs = th.nn.ModuleList()
+            for i in range(num_iter):
+                conv = HeteroConv({
+                    ("node", "nl", "link"): BaseGCN(hidden_dim, hidden_dim,
+                                            aggr=aggr,
+                                            update=update,
+                                            message_str=message),
+                    ("link", "ln", "node"): BaseGCN(hidden_dim, hidden_dim,
+                                            aggr=aggr,
+                                            update=update,
+                                            message_str=message)
+                }, aggr="sum")
+                self.convs.append(conv)
+        else:
+            self.conv = HeteroConv({
+                    ("node", "nl", "link"): BaseGCN(hidden_dim, hidden_dim,
+                                            aggr=aggr,
+                                            update="rnn",
+                                            message_str=message,
+                                            num_iter=num_iter),
+                    ("link", "ln", "node"): BaseGCN(hidden_dim, hidden_dim,
+                                            aggr=aggr,
+                                            update="rnn",
+                                            message_str=message,
+                                            num_iter=num_iter)
+                }, aggr="sum")
     
     def local_pool(self, ptr, x, edge_index_dict):
         index = (ptr == 1).nonzero()
@@ -293,7 +309,12 @@ class HeteroGNN(nn.Module):
         ptr = x_dict["link"][:, -1]
         x_dict = {key: th.nn.functional.pad(value, pad=(0, self.hidden_dim-value.size()[1]),
                                             mode='constant', value=0) for key, value in x_dict.items()}
-        for conv in self.convs:
+        for i in range(self.num_iter):
+            if not self.shared:
+                conv = self.convs[i]
+            else:
+                conv = self.conv
+        #for conv in self.convs:
             x_dict = conv(x_dict, edge_index_dict)
             x_dict = {key: x.relu() for key, x in x_dict.items()}
 
@@ -312,8 +333,13 @@ class GSCActor(nn.Module):
         embedder_layers = agent_helper.config["GNN_layers"]
         action_space = agent_helper.env.action_space
 
+        pool = self.agent_helper.config["actor_pooling"]
+
         readout_layers = hidden_layers.copy()
-        readout_layers.insert(0, feature_size*3)
+        if pool == "global":
+           readout_layers.insert(0, feature_size)
+        elif pool == "local":
+            readout_layers.insert(0, feature_size*3)
         readout_layers.append(np.prod(action_space.shape))
 
         message = self.agent_helper.config["GNN_message"]
@@ -323,8 +349,10 @@ class GSCActor(nn.Module):
         update = self.agent_helper.config["GNN_update"]
         if update == "None":
             update = None
+        shared = self.agent_helper.config["GNN_share"]
+        
         self.embedder = HeteroGNN(feature_size, embedder_layers, aggr=aggr,
-                                message=message, update=update, pool="local")
+                        message=message, update=update, pool=pool, shared=shared)
 
         self.readout = MLP(
             channel_list=readout_layers,
@@ -372,9 +400,15 @@ class GSCCritic(nn.Module):
         hidden_layers: list = agent_helper.config["critic_readout_layers"]
         feature_size = agent_helper.config["GNN_features"]
         embedder_layers = agent_helper.config["GNN_layers"]
+        action_space = agent_helper.env.action_space
+
+        pool = self.agent_helper.config["critic_pooling"]
 
         readout_layers = hidden_layers.copy()
-        readout_layers.insert(0, feature_size)
+        if pool == "global":
+            readout_layers.insert(0, feature_size+np.prod(action_space.shape))
+        elif pool == "local":
+            readout_layers.insert(0, feature_size*3+np.prod(action_space.shape))
         readout_layers.append(1)
 
         message = self.agent_helper.config["GNN_message"]
@@ -384,8 +418,10 @@ class GSCCritic(nn.Module):
         update = self.agent_helper.config["GNN_update"]
         if update == "None":
             update = None
+        shared = self.agent_helper.config["GNN_share"]
+        
         self.embedder = HeteroGNN(feature_size, embedder_layers, aggr=aggr,
-                                message=message, update=update, pool="global")
+                        message=message, update=update, pool=pool, shared=shared)
 
         self.readout = MLP(
             channel_list=readout_layers,
