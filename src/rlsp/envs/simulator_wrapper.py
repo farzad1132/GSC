@@ -224,11 +224,28 @@ class SimulatorWrapper:
         
         return action_array.flatten()
     
+
+    def _action_array_edge_value(self, action_array: np.ndarray) -> th.Tensor:
+        net = nx.DiGraph(self.last_het_graph)
+        net = hetero_to_homo(net)
+
+        action_array = action_array.reshape(self.env_limits.scheduling_shape)
+        for src, dst, value in net.edges(data=True):
+            value["node_feature"] = [0 for _ in range(self.env_limits.MAX_SERVICE_FUNCTION_COUNT)]
+            for _, sf_idx in self.sf_map.items():
+                value["node_feature"][sf_idx] = action_array[self.node_map[src]][0][sf_idx][self.node_map[dst]]
+
+        net = homo_to_hetero(net, link_features=["node_feature"], node_features=[])
+        net = HeteroGraph(net)
+        return net.node_feature["link"]
+
     
     def _process_graph_edge_values(self, edge_values: th.Tensor) -> np.ndarray:
         # We do not need softmax over edge values at the moment
         """ ptr = self._calculate_ptr(self.last_edge_index)
         edge_values = softmax(edge_values, ptr=ptr, dim=0) """
+        #ptr = self.last_edge_index[('node', 'nl', 'link')][0, :]
+        #edge_values = softmax(edge_values, index=ptr, dim=0)
 
         return self._edge_value_to_action_array(edge_values), edge_values
         
@@ -285,10 +302,14 @@ class SimulatorWrapper:
         simulator_action = SimulatorAction(placement_dict, scheduling_dict)
         state = self.simulator.apply(simulator_action)
 
-        obs = self._parse_state_as_graph(state) if self.graph_mode else self._parse_state(state)
         if self.graph_mode:
-            self.last_edge_index = obs.edge_index
-        return obs, state
+            obs = self._parse_state_as_graph(state)
+            return obs, state, self._action_array_edge_value(action_array)
+        else:
+            obs = self._parse_state(state)
+            return obs, state
+        #obs = self._parse_state_as_graph(state) if self.graph_mode else self._parse_state(state)
+        #return obs, state
 
     def _parse_state(self, state: SimulatorState) -> np.ndarray:
         """Formats the SimulationState as an observation space object

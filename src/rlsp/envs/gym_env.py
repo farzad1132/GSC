@@ -35,7 +35,7 @@ class AutoResetWithSeed(gym.wrappers.AutoResetWrapper):
         self.seed = seed
     
     def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
+        obs, reward, terminated, truncated, info = self.env.new_step(action)
         if terminated or truncated:
 
             new_obs, new_info = self.env.reset(self.seed)
@@ -131,12 +131,39 @@ class GymEnv(gym.Env):
         logger.info(f"min_delay: {min_delay}, max_delay: {max_delay}, diameter: {self.network_diameter}")
         return min_delay, max_delay
 
-    def _post_append_gsc_obs(self, obs: HeteroGraph) -> HeteroGraph:
+    def _post_append_gsc_obs(self, obs: HeteroGraph, reset=False) -> HeteroGraph:
+        from copy import deepcopy
+        obs = deepcopy(obs)
+        target_edge_vec = th.zeros(self.env_limits.num_edges, 1)
+        if reset:
+            target_edge_vec[self.next_target_edge, 0] = 1
+        else:
+            # TODO
+            pass
+            #target_edge_vec[self.next_target_edge, 0] = 1
+            #self.edge_values = th.zeros(self.env_limits.num_edges, self.env_limits.MAX_SERVICE_FUNCTION_COUNT)
+            #self.edge_flags = th.zeros(self.env_limits.num_edges, 1)
+            #ptr = obs.edge_index[('node', 'nl', 'link')][0, :]
+            #self.edge_values = softmax(self.edge_values, index=ptr, dim=0)
+        obs.node_feature['link'] = th.cat(
+            [
+                obs.node_feature['link'],
+                self.edge_values,
+                self.edge_flags,
+                target_edge_vec
+            ],
+            dim=1
+        )
+        return obs
+    
+    def _inc_obs(self, obs: HeteroGraph) -> HeteroGraph:
+        from copy import deepcopy
+        obs = deepcopy(obs)
         target_edge_vec = th.zeros(self.env_limits.num_edges, 1)
         target_edge_vec[self.next_target_edge, 0] = 1
         obs.node_feature['link'] = th.cat(
             [
-                obs.node_feature['link'],
+                obs.node_feature['link'][:, :self.simulator_wrapper.env_limits.link_obs_space_len],
                 self.edge_values,
                 self.edge_flags,
                 target_edge_vec
@@ -199,7 +226,8 @@ class GymEnv(gym.Env):
             self.permutation = permutation
 
         if self.agent_config["graph_mode"]:
-            obs = self._post_append_gsc_obs(obs)
+            obs = self._post_append_gsc_obs(obs, reset=True)
+            self.last_obs = obs
 
         return obs, {}
     
@@ -219,6 +247,32 @@ class GymEnv(gym.Env):
         else:
             
             return None
+        
+    def new_step(self, action: np.ndarray):
+        done = False
+        if self.agent_config["graph_mode"]:
+            self._update_gsc_inner_state(action)
+        self.run_count += 1
+
+        if self.agent_config["graph_mode"]:
+            if self.run_count == self.agent_config['episode_steps']:
+                done = True
+                self.run_count = 0
+                obs, self.current_simulator_state, self.edge_values = self.simulator_wrapper.apply(action, self.edge_values)
+                reward = self.calculate_reward(self.current_simulator_state)
+                obs = self._post_append_gsc_obs(obs)
+            else:
+                reward = 0
+                obs = self._inc_obs(self.last_obs)
+                self.last_obs = obs
+        else:
+            obs, self.current_simulator_state = self.simulator_wrapper.apply(action)
+            reward = self.calculate_reward(self.current_simulator_state)
+            if self.run_count == self.agent_config['episode_steps']:
+                done = True
+                self.run_count = 0
+        
+        return obs, reward, done, False, {}
 
 
     def step(self, action: np.ndarray) -> Tuple[object, float, bool, dict]:
@@ -251,7 +305,7 @@ class GymEnv(gym.Env):
 
         # apply reversed action, calculate reward
         if self.agent_config["graph_mode"]:
-            obs, self.current_simulator_state = self.simulator_wrapper.apply(action, self.edge_values)
+            obs, self.current_simulator_state, _ = self.simulator_wrapper.apply(action, self.edge_values)
         else:
             obs, self.current_simulator_state = self.simulator_wrapper.apply(action)
         reward = self.calculate_reward(self.current_simulator_state)
