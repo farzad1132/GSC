@@ -31,8 +31,10 @@ class ActionScheduleProcessor:
         for _ in range(self.num_nodes * self.num_sfcs * self.num_sfs):
             end_idx = start_idx + self.num_nodes
             probs = action[start_idx:end_idx]
-            rounded_probs = [p if p >= self.schedule_threshold else 0 for p in probs]
-            normalized_probs = normalize_scheduling_probabilities(rounded_probs)
+            for _ in range(2):
+                rounded_probs = [p if p >= self.schedule_threshold else 0 for p in probs]
+                normalized_probs = np.array(normalize_scheduling_probabilities(rounded_probs))
+                probs = normalized_probs
             # check that normalized probabilities sum up to 1 (accurate to specified float accuracy)
             assert (1 - sum(normalized_probs)) < np.sqrt(np.finfo(np.float64).eps)
             processed_action.extend(normalized_probs)
