@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import wandb
-from stable_baselines3.common.buffers import DictReplayBuffer
+from stable_baselines3.common.buffers import DictReplayBuffer, ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Batch, Data
 from torch_geometric.nn import GCNConv
@@ -129,18 +129,12 @@ class QNetwork(nn.Module):
         action_space = agent_helper.env.action_space
 
         ## Feature extractor
-        if agent_helper.config["critic_feature_size"] is not None:
-            feature_size = int(agent_helper.config["critic_feature_size"])
+        if self.agent_helper.config["graph_mode"] is True:
+            feature_size = int(agent_helper.config["GNN_features"])
+            self.embedder = GNNEmbedder(2, [feature_size], 1)
         else:
             feature_size = np.array(obs_space.shape).prod()
         
-        if self.agent_helper.config["graph_mode"] is True and \
-            agent_helper.config["critic_feature_size"] is not None:
-            self.feature = GNNEmbedder(2, [feature_size], 1)
-            self.graph_mode = True
-        else:
-            self.graph_mode = False
-
         self.critic = nn.ModuleList()
         
         if len(hidden_layers) > 0:
@@ -156,8 +150,8 @@ class QNetwork(nn.Module):
 
 
     def forward(self, x, a):
-        if self.graph_mode:
-            x = self.feature(x.x, x.edge_index, x.batch)
+        if self.agent_helper.config["graph_mode"]:
+            x = self.embedder(x.x, x.edge_index, x.batch)
         x = th.cat([x, a], 1)
         return self.critic(x)
 
@@ -171,9 +165,11 @@ class Actor(nn.Module):
         action_space = agent_helper.env.action_space
         self.before_softmax = nn.ModuleList()
 
-        ## Feature extractor
-        feature_size = 22
-        self.feature = GNNEmbedder(2, [feature_size], 1)
+        if self.agent_helper.config["graph_mode"]:
+            feature_size = int(agent_helper.config["GNN_features"])
+            self.embedder = GNNEmbedder(2, [feature_size], 1)
+        else:
+            feature_size = np.array(obs_space.shape).prod()
         
         if len(hidden_layers) > 0:
             self.before_softmax.append(nn.Linear(feature_size, hidden_layers[0]))
@@ -212,7 +208,7 @@ class Actor(nn.Module):
 
     def forward(self, x):
         if self.agent_helper.config["graph_mode"]:
-            x = self.feature(x.x, x.edge_index, x.batch)
+            x = self.embedder(x.x, x.edge_index, x.batch)
         x = self.before_softmax(x)
         y = [self.softmax_layers[i](x[:, i*self.num_nodes:(i+1)*self.num_nodes]) for i in range(self.num_softmax)]
         x = th.concat(y, 1)
@@ -283,13 +279,22 @@ class SimpleDDPG:
         self.policy_frequency = 1
         self.n_action = self.env.action_space.shape[-1]
         
-        self.rb = DictReplayBuffer(
-            buffer_size=self.agent_helper.config["mem_limit"],
-            action_space=self.env.action_space,
-            observation_space=self.env.observation_space,
-            device=self.device,
-            handle_timeout_termination=False,
-        )
+        if self.agent_helper.config["graph_mode"]:
+            self.rb = DictReplayBuffer(
+                buffer_size=self.agent_helper.config["mem_limit"],
+                action_space=self.env.action_space,
+                observation_space=self.env.observation_space,
+                device=self.device,
+                handle_timeout_termination=False,
+            )
+        else:
+            self.rb = ReplayBuffer(
+                buffer_size=self.agent_helper.config["mem_limit"],
+                observation_space=self.env.observation_space,
+                action_space=self.env.action_space,
+                device=self.device,
+                handle_timeout_termination=False,
+            )
 
         
     def _init_networks(self):
@@ -411,7 +416,13 @@ class SimpleDDPG:
         real_next_obs = deepcopy(next_obs)
         if dones:
             real_next_obs = infos["final_observation"]
-        self.rb.add(graph_to_dict(obs), graph_to_dict(real_next_obs), actions, rewards, dones, infos)
+        if self.agent_helper.config["graph_mode"]:
+            to_store_obs = graph_to_dict(obs)
+            to_store_nx_obs = graph_to_dict(real_next_obs)
+        else:
+            to_store_obs = obs
+            to_store_nx_obs = real_next_obs
+        self.rb.add(to_store_obs, to_store_nx_obs, actions, rewards, dones, infos)
     
 
     def train(self, episodes: int):
