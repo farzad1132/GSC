@@ -5,6 +5,7 @@ from coordsim.forwarders import *
 from coordsim.flow_generators import *
 from coordsim.flow_processors import *
 from coordsim.decision_maker import *
+from tqdm import tqdm
 # from coordsim.metrics import metrics
 
 log = logging.getLogger(__name__)
@@ -47,8 +48,10 @@ class FlowSimulator:
         # Setting the all-pairs shortest path in the NetworkX network as a graph attribute
         log.info("Using nodes list {}\n".format(list(self.params.network.nodes.keys())))
         log.info("Total of {} ingress nodes available\n".format(len(self.params.ing_nodes)))
+        tqdm.write(f"Ingress nodes: {list(map(lambda x: x[0], self.params.ing_nodes))}")
         if self.params.eg_nodes:
             log.info("Total of {} egress nodes available\n".format(len(self.params.eg_nodes)))
+            tqdm.write(f"Egress nodes: {self.params.eg_nodes}")
         for node in self.params.ing_nodes:
             node_id = node[0]
             self.env.process(self.init_arrival(node_id))
