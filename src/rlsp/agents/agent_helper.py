@@ -3,7 +3,7 @@ from src.rlsp.utils.experiment_result import ExperimentResult
 
 class AgentHelper(object):
     """Data class to hold agent params"""
-    def __init__(self, agent_config, network, service, sim_config, seed, episodes, weights, verbose,
+    def __init__(self, agent_config, network, service, sim_config, schedule, seed, episodes, weights, verbose,
                  DATETIME, test, append_test, sim_seed, gen_scenario, episode_steps=200):
         self.episode_steps = episode_steps
         self.verbose = verbose
@@ -11,6 +11,8 @@ class AgentHelper(object):
         self.network_path = network
         self.service_path = service
         self.sim_config_path = sim_config
+        self.schedule_path = schedule
+        self.schedule = None
         self.seed = seed
         self.experiment_id = f"{DATETIME}_seed{seed}"
         self.result = ExperimentResult(self.experiment_id)

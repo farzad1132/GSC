@@ -61,17 +61,20 @@ def cli(agent_config, network, service, sim_config, episodes, seed, test, weight
     wrap_up(agent_helper)
 
 
-def setup(agent_config, network, service, sim_config, seed, episodes, weights,
+def setup(agent_config, network, service, sim_config, scheduler,  seed, episodes, weights,
           verbose, DATETIME, test, append_test, best, sim_seed, gen_scenario):
     """Overall setup for the rl variables"""
     if best:
         assert not (test or append_test or weights), "Cannot run 'best' with test, append_test, or weights"
-        result_dir = f"results/{get_base_path(agent_config, network, service, sim_config)}"
+        result_dir = f"results/{get_base_path(agent_config, scheduler, service, sim_config)}"
         test = select_best_agent(result_dir)
     # Create the AgentHelper data class
-    agent_helper = AgentHelper(agent_config, network, service, sim_config, seed, episodes, weights, verbose, DATETIME,
+    agent_helper = AgentHelper(agent_config, network, service, sim_config, scheduler, seed, episodes, weights, verbose, DATETIME,
                                test, append_test, sim_seed, gen_scenario)
 
+    import yaml
+    with open(agent_helper.schedule_path, "r") as file:
+        agent_helper.schedule = yaml.load(file.read(), Loader=yaml.Loader)
     # Setup the files and paths required for the agent
     setup_files(agent_helper, best)
     set_random_seed(seed, agent_helper)
@@ -162,13 +165,13 @@ def wrap_up(agent_helper):
     logger.info(f"See {agent_helper.logfile} for {'full (DEBUG)' if agent_helper.verbose else 'INFO'} log output.")
 
 
-def get_base_path(agent_config_path, network_path, service_path, sim_config_path):
+def get_base_path(agent_config_path, schedule_path, service_path, sim_config_path):
     """Return base path based on specified input paths."""
     agent_config_stem = os.path.splitext(os.path.basename(agent_config_path))[0]
-    network_stem = os.path.splitext(os.path.basename(network_path))[0]
+    schedule_stem = os.path.splitext(os.path.basename(schedule_path))[0]
     service_stem = os.path.splitext(os.path.basename(service_path))[0]
     config_stem = os.path.splitext(os.path.basename(sim_config_path))[0]
-    return f"{agent_config_stem}/{network_stem}/{service_stem}/{config_stem}"
+    return f"{agent_config_stem}/{schedule_stem}/{service_stem}/{config_stem}"
 
 
 def setup_files(agent_helper, best=False):
@@ -182,9 +185,10 @@ def setup_files(agent_helper, best=False):
     agent_helper.agent_config_path = click.format_filename(agent_helper.agent_config_path)
     agent_helper.network_path = click.format_filename(agent_helper.network_path)
     agent_helper.service_path = click.format_filename(agent_helper.service_path)
+    agent_helper.schedule_path = click.format_filename(agent_helper.schedule_path)
 
     # set result and graph base path based on network, service, config name
-    base_path = get_base_path(agent_helper.agent_config_path, agent_helper.network_path,
+    base_path = get_base_path(agent_helper.agent_config_path, agent_helper.schedule_path,
                               agent_helper.service_path, agent_helper.sim_config_path)
     agent_helper.result_base_path = f"./results/{base_path}"
     agent_helper.graph_base_path = f"./graph/{base_path}"
@@ -218,12 +222,14 @@ def setup_files(agent_helper, best=False):
 
     # Copy files to result dir
     agent_helper.agent_config_path, agent_helper.network_path, agent_helper.service_path, \
-        agent_helper.sim_config_path = copy_input_files(
+        agent_helper.sim_config_path, agent_helper.schedule_path = copy_input_files(
             agent_helper.config_dir,
             agent_helper.agent_config_path,
             agent_helper.network_path,
             agent_helper.service_path,
-            agent_helper.sim_config_path)
+            agent_helper.sim_config_path,
+            agent_helper.schedule_path,
+            agent_helper.schedule)
 
     if agent_helper.gen_scenario_test:
         weights = f"{agent_helper.gen_scenario_result_base_path}/{agent_helper.test}/weights*"
@@ -272,20 +278,29 @@ def get_config(config_file):
     return config
 
 
-def copy_input_files(target_dir, agent_config_path, network_path, service_path, sim_config_path):
+def copy_input_files(target_dir, agent_config_path, network_path, service_path, sim_config_path, sim_scheduler_path, schedule):
     """Create the results directory and copy input files"""
     new_agent_config_path = target_dir + os.path.basename(agent_config_path)
     new_network_path = target_dir + os.path.basename(network_path)
     new_service_path = target_dir + os.path.basename(service_path)
     new_sim_config_path = target_dir + os.path.basename(sim_config_path)
+    new_scheduler_path = target_dir + os.path.basename(sim_scheduler_path)
+
+    new_net_files = []
+    for item in schedule["training_network_files"]:
+        new_net_files.append(target_dir + os.path.basename(item))
+    schedule["training_network_files"] = new_net_files
+
+    schedule["inference_network"] = target_dir + os.path.basename(schedule["inference_network"])
 
     os.makedirs(target_dir, exist_ok=True)
     copyfile(agent_config_path, new_agent_config_path)
     copyfile(network_path, new_network_path)
     copyfile(service_path, new_service_path)
     copyfile(sim_config_path, new_sim_config_path)
+    copyfile(sim_scheduler_path, new_scheduler_path)
 
-    return new_agent_config_path, new_network_path, new_service_path, new_sim_config_path
+    return new_agent_config_path, new_network_path, new_service_path, new_sim_config_path, new_scheduler_path
 
 
 def setup_logging(verbose, logfile):
@@ -322,7 +337,7 @@ def create_environment(agent_helper):
 
     agent_helper.result.env_config['seed'] = agent_helper.seed
     agent_helper.result.env_config['sim-seed'] = agent_helper.sim_seed
-    agent_helper.result.env_config['network_file'] = agent_helper.network_path
+    #agent_helper.result.env_config['network_file'] = agent_helper.network_path
     agent_helper.result.env_config['service_file'] = agent_helper.service_path
     agent_helper.result.env_config['sim_config_file'] = agent_helper.sim_config_path
     agent_helper.result.env_config['simulator_cls'] = "siminterface.Simulator"
@@ -338,11 +353,12 @@ def create_environment(agent_helper):
 
     env = GymEnv(
         agent_config=agent_helper.config,
-        simulator=create_simulator(agent_helper),
+        scheduler_conf=agent_helper.schedule,
         network_file=agent_helper.network_path,
         service_file=agent_helper.service_path,
         seed=agent_helper.seed,
-        sim_seed=agent_helper.sim_seed
+        sim_seed=agent_helper.sim_seed,
+        agent_helper=agent_helper
     )
     env.num_envs = 1
     agent_helper.result.env_config['reward_fnc'] = LiteralStr(env.reward_func_repr())

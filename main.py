@@ -44,6 +44,7 @@ def exp_decay(init: float = 1e-2, end: float = 1e-3, decay: float = 0.25):
 @click.argument('network', type=click.Path(exists=True))
 @click.argument('service', type=click.Path(exists=True))
 @click.argument('sim_config', type=click.Path(exists=True))
+@click.argument('scheduler', type=click.Path(exists=True))
 @click.argument('episodes', type=int)
 @click.option('--seed', default=random.randint(1000, 9999),
               help="Specify the random seed for the environment and the learning agent.")
@@ -55,13 +56,13 @@ def exp_decay(init: float = 1e-2, end: float = 1e-3, decay: float = 0.25):
 @click.option('-ss', '--sim-seed', type=int, help="Set the simulator seed", default=None)
 @click.option('-gs', '--gen-scenario', type=click.Path(exists=True),
               help="Diff. sim config file for additional scenario test", default=None)
-def cli(agent_config, network, service, sim_config, episodes, seed, test, weights, append_test, verbose, best,
+def cli(agent_config, network, service, sim_config, scheduler, episodes, seed, test, weights, append_test, verbose, best,
         sim_seed, gen_scenario):
     """rlsp cli for learning and testing"""
     global logger
 
     # Setup agent helper class
-    agent_helper = setup(agent_config, network, service, sim_config, seed, episodes, weights, verbose, DATETIME, test,
+    agent_helper = setup(agent_config, network, service, sim_config, scheduler, seed, episodes, weights, verbose, DATETIME, test,
                          append_test, best, sim_seed, gen_scenario)
 
     agent = SimpleDDPG(agent_helper)
@@ -90,14 +91,15 @@ def cli(agent_config, network, service, sim_config, episodes, seed, test, weight
         setup_files(agent_helper)
 
     agent_helper.test_mode = True
-    simulator = create_simulator(agent_helper)
+
     env = GymEnv(
         agent_config=agent_helper.config,
-        simulator=simulator,
+        scheduler_conf=agent_helper.schedule,
         network_file=agent_helper.network_path,
         service_file=agent_helper.service_path,
         seed=seed,
-        sim_seed=sim_seed
+        sim_seed=sim_seed,
+        agent_helper=agent_helper
     )
 
     obs, _ = env.reset(agent_helper.seed)
@@ -107,9 +109,10 @@ def cli(agent_config, network, service, sim_config, episodes, seed, test, weight
 
 if __name__ == "__main__":
     agent_config = 'configs/config/agent/sample_agent.yaml'
-    network = 'configs/networks/node6/node6-in2-cap1-delay10.graphml'
+    network = 'configs/networks/abilene/abilene-in4-rand-cap1-2.graphml'
     service = 'configs/service_functions/abc.yaml'
     sim_config = 'configs/config/simulator/sample_config.yaml'
+    scheduler = 'configs/config/scheduler.yaml'
     # sim_config = 'configs/config/simulator/det-mmp-arrival7-3_det-size0_dur100_no_traffic_prediction.yaml'
 
     # training for 1 episode
@@ -119,4 +122,4 @@ if __name__ == "__main__":
     # cli([agent_config, network, service, sim_config, '1', '-t', '2021-01-07_13-00-43_seed1234'])
 
     # training & testing for 1 episodes
-    cli([agent_config, network, service, sim_config, '40', '--append-test'])
+    cli([agent_config, network, service, sim_config, scheduler, '40', '--append-test'])

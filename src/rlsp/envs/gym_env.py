@@ -11,11 +11,13 @@ https://github.com/rll/rllab/blob/master/docs/user/implement_env.rst
 """
 import inspect
 import logging
+import os
 from typing import Tuple
 
 import gym
 import numpy as np
 from gym.utils import seeding
+from tqdm import tqdm
 
 from coordsim.reader.builders import network_builder
 from coordsim.reader.reader import get_sf, get_sfc, network_diameter
@@ -23,6 +25,7 @@ from spinterface import SimulatorInterface, SimulatorState
 from src.rlsp.envs.environment_limits import EnvironmentLimits
 from src.rlsp.envs.simulator_wrapper import SimulatorWrapper
 from src.rlsp.utils.constants import SUPPORTED_OBJECTIVES
+from src.rlsp.utils.util_functions import create_simulator
 
 logger = logging.getLogger(__name__)
 
@@ -37,36 +40,41 @@ class GymEnv(gym.Env):
 
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, agent_config, simulator, network_file, service_file, seed=None, sim_seed=None,
-                 render_mode: str = None):
+    def __init__(self, agent_config, scheduler_conf, network_file, service_file, seed=None, sim_seed=None,
+                 render_mode: str = None, agent_helper = None):
 
         self.network_file = network_file
         self.agent_config = agent_config
-        self.simulator = simulator
+        self.simulator = None
         self.sim_seed = sim_seed
         self.simulator_wrapper = None
         self.current_simulator_state = None
         self.render_mode = None
+        self.agent_helper = agent_helper
+        self.scheduler_conf = scheduler_conf
 
         self.last_succ_flow = 0
         self.last_drop_flow = 0
         self.last_gen_flow = 0
         self.run_count = 0
+        self.episode_count = 0
 
         """ self.np_random = np.random.RandomState()
         self.seed(seed) """
 
-        self.network, _, _ = network_builder(self.network_file, self.simulator.config)
-        self.network_diameter = network_diameter(self.network)
+        #self.network, _, _ = network_builder(self.network_file, self.simulator.config)
+        # TODO: change this Gen type 4
+        self.network_diameter = 15
         self.sfc_list = get_sfc(service_file)
         self.sf_list = get_sf(service_file)
+        # TODO: Change this for Gen type 4
         self.env_limits = EnvironmentLimits(
-            num_nodes=len(self.network.nodes),
+            num_nodes=11,
             sfc_list=self.sfc_list,
             node_obs_space_len=len(agent_config['observation_space']),
             link_obs_space_len=len(agent_config["link_observation_space"]),
             graph_mode=self.agent_config["graph_mode"],
-            num_edges=self.network.number_of_edges()
+            num_edges=14
         )
         self.min_delay, self.max_delay = self.min_max_delay()
         self.action_space = self.env_limits.action_space
@@ -104,6 +112,33 @@ class GymEnv(gym.Env):
         logger.info(f"min_delay: {min_delay}, max_delay: {max_delay}, diameter: {self.network_diameter}")
         return min_delay, max_delay
 
+    def _schedule_network(self):
+        if self.simulator == None and self.episode_count == 0 \
+            and self.agent_helper.test_mode is not True:
+            network = self.scheduler_conf["training_network_files"][0]
+            self.agent_helper.network_path = network
+            self.agent_helper.result.env_config['network_file'] = network
+            tqdm.write(f"current network: {os.path.basename(network)}")
+            self.simulator = create_simulator(self.agent_helper)
+        
+        if self.episode_count % self.scheduler_conf["period"] == 0 and self.episode_count > 0:
+            index = self.episode_count // self.scheduler_conf["period"]
+            if index >= len(self.scheduler_conf["training_network_files"]):
+                index %= len(self.scheduler_conf["training_network_files"])
+            network = self.scheduler_conf['training_network_files'][index]
+            tqdm.write(f"current network: {os.path.basename(network)}")
+            self.agent_helper.network_path = network
+            self.agent_helper.result.env_config['network_file'] = network
+            self.simulator = create_simulator(self.agent_helper)
+
+        if self.agent_helper.test_mode is True:
+            network = self.agent_helper.schedule["inference_network"]
+            print(f"current network: {os.path.basename(network)}")
+            self.agent_helper.network_path = network
+            self.agent_helper.result.env_config['network_file'] = network
+            self.simulator = create_simulator(self.agent_helper)
+        return self.simulator
+
     def reset(self, seed: int = None, **kwargs):
         """
         Resets the state of the envs, returning an initial observation.
@@ -123,6 +158,7 @@ class GymEnv(gym.Env):
         else:
             simulator_seed = self.sim_seed """
         logger.debug(f"Simulator seed is {seed}")
+        self.simulator = self._schedule_network()
         self.simulator_wrapper = SimulatorWrapper(self.simulator, self.env_limits, self.agent_config["graph_mode"],
                                                   self.agent_config['observation_space'])
 
@@ -181,6 +217,7 @@ class GymEnv(gym.Env):
         if self.run_count == self.agent_config['episode_steps']:
             done = True
             self.run_count = 0
+            self.episode_count += 1
 
         logger.debug(f"NN input (observation): {obs}")
         return obs, reward, done, False, {}
