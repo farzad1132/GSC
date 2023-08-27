@@ -286,16 +286,21 @@ def copy_input_files(target_dir, agent_config_path, network_path, service_path, 
     new_sim_config_path = target_dir + os.path.basename(sim_config_path)
     new_scheduler_path = target_dir + os.path.basename(sim_scheduler_path)
 
+    os.makedirs(target_dir, exist_ok=True)
+
     new_net_files = []
     for item in schedule["training_network_files"]:
-        new_net_files.append(target_dir + os.path.basename(item))
+        new_path = target_dir + os.path.basename(item)
+        new_net_files.append(new_path)
+        copyfile(item, new_path)
     schedule["training_network_files"] = new_net_files
 
-    schedule["inference_network"] = target_dir + os.path.basename(schedule["inference_network"])
-
-    os.makedirs(target_dir, exist_ok=True)
+    new_infer_net = target_dir + os.path.basename(schedule["inference_network"])
+    copyfile(schedule["inference_network"], new_infer_net)
+    schedule["inference_network"] = new_infer_net
+    
     copyfile(agent_config_path, new_agent_config_path)
-    copyfile(network_path, new_network_path)
+    #copyfile(network_path, new_network_path)
     copyfile(service_path, new_service_path)
     copyfile(sim_config_path, new_sim_config_path)
     copyfile(sim_scheduler_path, new_scheduler_path)
