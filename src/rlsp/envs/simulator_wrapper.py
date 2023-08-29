@@ -267,6 +267,17 @@ class SimulatorWrapper:
 
             for (node, d) in net.nodes(data=True):
                 d["node_load"] = nodes_utilization[self.node_map[node]]
+        
+        if 'node_cap' in self.observations_space:
+            group_node_attrs.append("node_cap")
+            node_cap = np.array([0.0 for v in state.network['nodes']], dtype=np.float32)
+            for node in state.network["nodes"]:
+                node_cap[self.node_map[node['id']]] = node["resource"]
+            
+            node_cap = np.clip(node_cap / (np.max(node_cap)+1e-3), 0, 1)
+
+            for (node, d) in net.nodes(data=True):
+                d["node_cap"] = node_cap[self.node_map[node]]
 
         # Using pytorch_geometric utility to convert networkx's Graph to pytorch_geometric's Data
         data = from_networkx(net,
