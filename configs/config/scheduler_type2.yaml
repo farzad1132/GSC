@@ -1,0 +1,14 @@
+## This file configures the scheduler used to change the Gym environment during the training process
+
+training_network_files:
+  - configs/networks/abilene/abilene-in4-rand-cap.graphml
+  - configs/networks/abilene/abilene-in4-rand-cap0-2.graphml
+#  - configs/networks/abilene/abilene-in4-rand-cap1-2-perm2.graphml
+#  - configs/networks/abilene/abilene-in4-cap3.graphml
+#  - configs/networks/abilene/abilene-in4-rand-cap.graphml
+#  - configs/networks/abilene/abilene-in4-rand-cap0-5.graphml
+  
+
+inference_network: configs/networks/abilene/abilene-in4-rand-cap1-2-perm1.graphml
+
+period: 10
