@@ -18,7 +18,7 @@ import wandb
 from stable_baselines3.common.buffers import DictReplayBuffer, ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Batch, Data
-from torch_geometric.nn import GCNConv
+from torch_geometric.nn import GATConv, GCNConv
 from torch_geometric.nn.pool import global_mean_pool
 from tqdm import tqdm
 
@@ -77,26 +77,22 @@ class GNNEmbedder(nn.Module):
     """
         This graph embedder module 
     """
-    def __init__(self, input_dim, hidden_dim: List[int], num_layers, dropout: float = 0.5):
+    def __init__(self, input_dim: int, hidden_dim: int, num_layers: int, aggr: str, num_iter: int,
+                dropout: float = 0.5):
         super().__init__()
 
-        if not isinstance(hidden_dim, list):
-            raise Exception("hidden_dim should be a list of int")
-        assert num_layers == len(hidden_dim), "Size if hidden_dim should be equal to number of layers"
-
-
-        # A list of 1D batch normalization layers
-        #self.bns = None
-
-        self.convs = nn.ModuleList([GCNConv(input_dim, hidden_dim[0])])
-        if num_layers > 1:
-            self.convs.extend([GCNConv(hidden_dim[i], hidden_dim[i+1]) for i in range(num_layers-1)])
-
-        #self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers-1)])
+        self.num_iter = num_iter
         self.num_layers = num_layers
-
-        # Probability of an element to be zeroed
         self.dropout = dropout
+
+        self.encoder = GATConv(input_dim, hidden_dim, aggr=aggr)
+
+        self.process = nn.ModuleList([])
+        for _ in range(num_layers-1):
+            self.process.append(GATConv(hidden_dim, hidden_dim, aggr=aggr))
+        
+        #self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers)])
+
 
     def reset_parameters(self):
         for conv in self.convs:
@@ -105,19 +101,22 @@ class GNNEmbedder(nn.Module):
             bn.reset_parameters() """
 
     def forward(self, x, adj_t, batch):
-        out = None
+        x = self.encoder(x, adj_t)
+        #x = self.bns[0].forward(x)
+        x = nn.functional.relu(x)
+        
+        if self.num_layers == 1:
+            return global_mean_pool(x, batch=batch)
 
-        for layer in range(self.num_layers):
-            if layer != self.num_layers -1:
-                x = self.convs[layer].forward(x, adj_t)
-                #x = self.bns[layer].forward(x)
-                x = nn.functional.relu(x)
-                #x = nn.functional.dropout(x, p=self.dropout, training=self.training)
-            else:
-                x = self.convs[layer].forward(x, adj_t)
-                out = global_mean_pool(x, batch=batch)
+        for iter in range(self.num_iter):
+            for i, conv in enumerate(self.process):
+                x = conv(x, adj_t)
+                #x = self.bns[i+1].forward(x)
 
-        return out
+                if i == self.num_layers-2 and iter == self.num_iter-1:
+                    return global_mean_pool(x, batch=batch)
+                else:
+                    x = nn.functional.relu(x)
 
 # TODO: This network doesn't use any feature extractor. See SB3 implementation for more insight
 class QNetwork(nn.Module):
@@ -131,7 +130,15 @@ class QNetwork(nn.Module):
         ## Feature extractor
         if self.agent_helper.config["graph_mode"] is True:
             feature_size = int(agent_helper.config["GNN_features"])
-            self.embedder = GNNEmbedder(obs_space["nodes"].shape[-1], [feature_size], 1)
+            num_layers = int(agent_helper.config["GNN_num_layers"])
+            num_iter = int(agent_helper.config["GNN_num_iter"])
+            aggr = agent_helper.config["GNN_aggr"]
+            self.embedder = GNNEmbedder(
+                input_dim=obs_space["nodes"].shape[-1],
+                hidden_dim=feature_size,
+                num_layers=num_layers,
+                num_iter=num_iter,
+                aggr=aggr)
         else:
             feature_size = np.array(obs_space.shape).prod()
         
@@ -167,7 +174,15 @@ class Actor(nn.Module):
 
         if self.agent_helper.config["graph_mode"]:
             feature_size = int(agent_helper.config["GNN_features"])
-            self.embedder = GNNEmbedder(obs_space["nodes"].shape[-1], [feature_size], 1)
+            num_layers = int(agent_helper.config["GNN_num_layers"])
+            num_iter = int(agent_helper.config["GNN_num_iter"])
+            aggr = agent_helper.config["GNN_aggr"]
+            self.embedder = GNNEmbedder(
+                input_dim=obs_space["nodes"].shape[-1],
+                hidden_dim=feature_size,
+                num_layers=num_layers,
+                num_iter=num_iter,
+                aggr=aggr)
         else:
             feature_size = np.array(obs_space.shape).prod()
         
@@ -455,6 +470,7 @@ class SimpleDDPG:
             if global_step % self.agent_helper.episode_steps == self.agent_helper.episode_steps-1:
                 # TODO: train/test on/off for models
                 if global_step >= self.agent_helper.config['nb_steps_warmup_critic']-1:
+                    self.actor.train()
 
                     # Multiple gradient steps
                     for _ in range(self.agent_helper.episode_steps):

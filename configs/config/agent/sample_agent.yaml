@@ -6,6 +6,7 @@
 observation_space:
   - ingress_traffic
   - node_load
+  - node_cap
 
 # Available options are: ['delay', 'link_load']
 link_observation_space:
@@ -26,6 +27,9 @@ agent_type: "DDPG"
 
 # NN Config for actor and critic
 GNN_features: 22
+GNN_num_layers: 2
+GNN_num_iter: 2
+GNN_aggr: mean
 actor_hidden_layer_nodes: [128] # Array with nodes for each layer
 actor_hidden_layer_activation: "relu"
 critic_hidden_layer_nodes: [64] # Array with nodes for each layer
