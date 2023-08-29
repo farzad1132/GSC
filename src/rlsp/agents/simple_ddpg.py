@@ -131,7 +131,7 @@ class QNetwork(nn.Module):
         ## Feature extractor
         if self.agent_helper.config["graph_mode"] is True:
             feature_size = int(agent_helper.config["GNN_features"])
-            self.embedder = GNNEmbedder(2, [feature_size], 1)
+            self.embedder = GNNEmbedder(obs_space["nodes"].shape[-1], [feature_size], 1)
         else:
             feature_size = np.array(obs_space.shape).prod()
         
@@ -167,7 +167,7 @@ class Actor(nn.Module):
 
         if self.agent_helper.config["graph_mode"]:
             feature_size = int(agent_helper.config["GNN_features"])
-            self.embedder = GNNEmbedder(2, [feature_size], 1)
+            self.embedder = GNNEmbedder(obs_space["nodes"].shape[-1], [feature_size], 1)
         else:
             feature_size = np.array(obs_space.shape).prod()
         
