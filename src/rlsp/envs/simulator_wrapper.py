@@ -8,6 +8,7 @@ from typing import Tuple
 
 import networkx as nx
 import numpy as np
+import torch as th
 from torch_geometric.utils import from_networkx
 
 from siminterface.simulator import Simulator
@@ -135,10 +136,14 @@ class SimulatorWrapper:
         state: SimulatorState
         """
         logger.debug(f"Action array (NN output + noise, normalized): {action_array}")
-        action_processor = ActionScheduleProcessor(self.env_limits.MAX_NODE_COUNT, self.env_limits.MAX_SF_CHAIN_COUNT,
-                                                   self.env_limits.MAX_SERVICE_FUNCTION_COUNT)
-        action_array = action_processor.process_action(action_array)
-        scheduling = np.reshape(action_array, self.env_limits.scheduling_shape)
+        num_nodes = self.simulator.network.number_of_nodes()
+        mask = np.zeros(self.env_limits.scheduling_shape)
+        mask[:num_nodes, :, :, :num_nodes] = 1
+        mask = mask.flatten()
+        action_array = action_array[mask == 1]
+        
+        scheduling = np.reshape(action_array, (num_nodes, self.env_limits.MAX_SF_CHAIN_COUNT,
+                                self.env_limits.MAX_SERVICE_FUNCTION_COUNT, num_nodes))
 
         # initialize with empty schedule and placement for each node, SFC, SF
         scheduling_dict = {v: {sfc: {sf: {} for sf in self.sf_map.keys()} for sfc in self.sfc_map.keys()}
@@ -283,6 +288,13 @@ class SimulatorWrapper:
         data = from_networkx(net,
                             group_node_attrs=group_node_attrs,
                             group_edge_attrs=None)
+        
+        # generating mask
+        num_nodes = len(state.network["nodes"])
+        mask = th.zeros(self.env_limits.scheduling_shape, dtype=th.float32)
+        mask[:num_nodes, :, :, :num_nodes] = 1
+
+        data["mask"] = mask.view(1, -1)
         
         return data
     
