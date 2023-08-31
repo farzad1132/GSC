@@ -1,7 +1,7 @@
 import numpy as np
 import torch as th
 import torch.nn as nn
-from torch_geometric.nn import GATConv, GCNConv
+from torch_geometric.nn import MLP, GATConv, GCNConv
 from torch_geometric.nn.pool import global_mean_pool
 
 from src.rlsp.agents.agent_helper import AgentHelper
@@ -57,7 +57,7 @@ class QNetwork(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
         super().__init__()
         self.agent_helper = agent_helper
-        hidden_layers = agent_helper.config["critic_hidden_layer_nodes"]
+        hidden_layers = list(agent_helper.config["critic_hidden_layer_nodes"])
         obs_space = agent_helper.env.observation_space
         action_space = agent_helper.env.action_space
 
@@ -75,19 +75,13 @@ class QNetwork(nn.Module):
                 aggr=aggr)
         else:
             feature_size = np.array(obs_space.shape).prod()
-        
-        self.critic = nn.ModuleList()
-        
-        if len(hidden_layers) > 0:
-            self.critic.append(nn.Linear(feature_size \
-                             + np.prod(action_space.shape), hidden_layers[0]))
-            self.critic.append(nn.ReLU())
-        if len(hidden_layers) >= 2:
-            for i in range(len(hidden_layers)-1):
-                self.critic.append(hidden_layers[i], hidden_layers[i+1])
-                self.critic.append(nn.ReLU()) 
-        self.critic.append(nn.Linear(hidden_layers[-1], 1))
-        self.critic = nn.Sequential(*self.critic)
+
+        hidden_layers.insert(0, feature_size+2*np.prod(action_space.shape))
+        hidden_layers.append(1)
+        self.critic = MLP(
+            channel_list=hidden_layers,
+            norm=None
+        )
 
 
     def forward(self, x, a):
@@ -101,10 +95,9 @@ class Actor(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
         super().__init__()
         self.agent_helper = agent_helper
-        hidden_layers = agent_helper.config["actor_hidden_layer_nodes"]
+        hidden_layers = list(agent_helper.config["actor_hidden_layer_nodes"])
         obs_space = agent_helper.env.observation_space
         action_space = agent_helper.env.action_space
-        self.before_softmax = nn.ModuleList()
 
         if self.agent_helper.config["graph_mode"]:
             feature_size = int(agent_helper.config["GNN_features"])
@@ -120,21 +113,15 @@ class Actor(nn.Module):
         else:
             feature_size = np.array(obs_space.shape).prod()
         
-        if len(hidden_layers) > 0:
-            self.before_softmax.append(nn.Linear(feature_size, hidden_layers[0]))
-            self.before_softmax.append(nn.ReLU())
-        if len(hidden_layers) >= 2:
-            for i in range(len(hidden_layers)-1):
-                self.before_softmax.append(hidden_layers[i], hidden_layers[i+1])
-                self.before_softmax.append(nn.ReLU()) 
-        self.before_softmax.append(nn.Linear(hidden_layers[-1], np.prod(action_space.shape)))
-        self.before_softmax = nn.Sequential(*self.before_softmax)
+        hidden_layers.insert(0, feature_size+np.prod(action_space.shape))
+        hidden_layers.append(np.prod(action_space.shape))
+        self.actor = MLP(
+            channel_list=hidden_layers,
+            norm=None
+        )
 
         self.low = action_space.low
         self.high = action_space.high
-        self.num_nodes = agent_helper.env.env_limits.MAX_NODE_COUNT
-        self.num_softmax = self.num_nodes*agent_helper.env.env_limits.MAX_SERVICE_FUNCTION_COUNT
-        self.softmax_layers = [nn.Softmax(1) for _ in range(self.num_softmax)]
     
     def scale_action(self, action: np.ndarray) -> np.ndarray:
         """
