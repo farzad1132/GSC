@@ -21,6 +21,7 @@ from torch_geometric.data import Batch, Data
 from tqdm import tqdm
 
 from src.rlsp.agents.agent_helper import AgentHelper
+from src.rlsp.agents.buffer import GraphReplayBuffer
 from src.rlsp.agents.main import create_environment
 from src.rlsp.agents.models import Actor, QNetwork
 
@@ -137,12 +138,10 @@ class SimpleDDPG:
         self.n_action = self.env.action_space.shape[-1]
         
         if self.agent_helper.config["graph_mode"]:
-            self.rb = DictReplayBuffer(
+            self.rb = GraphReplayBuffer(
                 buffer_size=self.agent_helper.config["mem_limit"],
                 action_space=self.env.action_space,
-                observation_space=self.env.observation_space,
-                device=self.device,
-                handle_timeout_termination=False,
+                device=self.device
             )
         else:
             self.rb = ReplayBuffer(
@@ -273,13 +272,7 @@ class SimpleDDPG:
         real_next_obs = deepcopy(next_obs)
         if dones:
             real_next_obs = infos["final_observation"]
-        if self.agent_helper.config["graph_mode"]:
-            to_store_obs = graph_to_dict(obs)
-            to_store_nx_obs = graph_to_dict(real_next_obs)
-        else:
-            to_store_obs = obs
-            to_store_nx_obs = real_next_obs
-        self.rb.add(to_store_obs, to_store_nx_obs, actions, rewards, dones, infos)
+        self.rb.add(obs, real_next_obs, actions, rewards, dones, infos)
     
 
     def train(self, episodes: int):
@@ -318,7 +311,7 @@ class SimpleDDPG:
                     for _ in range(self.agent_helper.episode_steps):
                         data = self.rb.sample(self.batch_size)
 
-                        cur_obs, next_obs = self._convert_obs(data.observations, data.next_observations)
+                        cur_obs, next_obs = data.observations, data.next_observations
 
                         qf1_a_values, qf1_loss = self._update_critic(next_obs, cur_obs, data.dones, data.rewards, data.actions)
 
