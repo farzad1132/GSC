@@ -160,7 +160,7 @@ def shortest_paths(networkx_network):
     networkx_network.graph['shortest_paths'] = shortest_paths_with_delays
 
 
-def read_network(file, node_cap=None, link_cap=None, force_link_cap: float = None,
+def read_network(file, node_cap=None, link_cap=1000, force_link_cap: float = None,
                 force_node_cap: List[float] = None):
     """
     Read the GraphML file and return list of nodes and edges.
