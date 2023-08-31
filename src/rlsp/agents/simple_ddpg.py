@@ -18,8 +18,6 @@ import wandb
 from stable_baselines3.common.buffers import DictReplayBuffer, ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Batch, Data
-from torch_geometric.nn import GATConv, GCNConv
-from torch_geometric.nn.pool import global_mean_pool
 from tqdm import tqdm
 
 from src.rlsp.agents.agent_helper import AgentHelper
