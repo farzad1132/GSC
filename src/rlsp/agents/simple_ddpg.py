@@ -182,6 +182,7 @@ class SimpleDDPG:
     def _choose_action(self, obs, global_step):
         if global_step < self.agent_helper.config['nb_steps_warmup_critic']:
             actions = self.env.action_space.sample()
+            actions = actions * np.array(obs.mask)
         else:
             with th.no_grad():
                 if self.agent_helper.config["graph_mode"]:
