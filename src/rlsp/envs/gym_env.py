@@ -62,19 +62,17 @@ class GymEnv(gym.Env):
         """ self.np_random = np.random.RandomState()
         self.seed(seed) """
 
-        #self.network, _, _ = network_builder(self.network_file, self.simulator.config)
         # TODO: change this Gen type 4
         self.network_diameter = 15
         self.sfc_list = get_sfc(service_file)
         self.sf_list = get_sf(service_file)
-        # TODO: Change this for Gen type 4
         self.env_limits = EnvironmentLimits(
-            num_nodes=11,
+            num_nodes=24,
             sfc_list=self.sfc_list,
             node_obs_space_len=len(agent_config['observation_space']),
             link_obs_space_len=len(agent_config["link_observation_space"]),
             graph_mode=self.agent_config["graph_mode"],
-            num_edges=14
+            num_edges=37
         )
         self.min_delay, self.max_delay = self.min_max_delay()
         self.action_space = self.env_limits.action_space
