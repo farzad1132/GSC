@@ -22,10 +22,11 @@ class GraphReplayBuffer:
     ) -> None:
         self.buffer_size = buffer_size
         self.device = device
+        self.action_space = np.prod(action_space.shape)
 
         self.dones = np.ones(self.buffer_size, np.float32)
         self.rewards = np.zeros(self.buffer_size, dtype=np.float32)
-        self.actions = th.zeros((self.buffer_size, np.prod(action_space.shape)), dtype=th.float32)
+        self.actions = th.zeros((self.buffer_size, self.action_space), dtype=th.float32)
         self.observations = np.zeros((self.buffer_size, 3), dtype=Data)
         self.next_observations = np.zeros((self.buffer_size, 3), dtype=Data)
 
@@ -82,7 +83,7 @@ class GraphReplayBuffer:
             rewards=th.from_numpy(self.rewards[batch_inds]).to(self.device),
         )
 
-        batch.observations.mask = th.tensor(np.array(batch.observations.mask), dtype=th.float32)
-        batch.next_observations.mask = th.tensor(np.array(batch.next_observations.mask), dtype=th.float32)
+        batch.observations.mask = batch.observations.mask.view(-1, self.action_space)
+        batch.next_observations.mask = batch.next_observations.mask.view(-1, self.action_space)
 
         return batch
