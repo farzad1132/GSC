@@ -216,8 +216,9 @@ def read_network(file, node_cap=None, link_cap=1000, force_link_cap: float = Non
             n1_lat, n1_long = n1.get("Latitude", None), n1.get("Longitude", None)
             n2_lat, n2_long = n2.get("Latitude", None), n2.get("Longitude", None)
             if n1_lat is None or n1_long is None or n2_lat is None or n2_long is None:
-                log.warning("Link Delay not set in the GraphML file and unable to calc based on Geo Location,"
-                            "Now using default delay for edge: ({},{})".format(source, target))
+                pass
+                """ log.warning("Link Delay not set in the GraphML file and unable to calc based on Geo Location,"
+                            "Now using default delay for edge: ({},{})".format(source, target)) """
             else:
                 distance = dist((n1_lat, n1_long), (n2_lat, n2_long)).meters  # in meters
                 # round delay to int using np.around for consistency with emulator
