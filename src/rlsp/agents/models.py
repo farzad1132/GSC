@@ -86,7 +86,9 @@ class QNetwork(nn.Module):
 
     def forward(self, x, a):
         if self.agent_helper.config["graph_mode"]:
+            mask = x.mask
             x = self.embedder(x.x, x.edge_index, x.batch)
+            x = th.cat([x, mask], 1)
         x = th.cat([x, a], 1)
         return self.critic(x)
 
@@ -144,8 +146,10 @@ class Actor(nn.Module):
 
     def forward(self, x):
         if self.agent_helper.config["graph_mode"]:
+            mask = x.mask
             x = self.embedder(x.x, x.edge_index, x.batch)
-        x = self.before_softmax(x)
-        y = [self.softmax_layers[i](x[:, i*self.num_nodes:(i+1)*self.num_nodes]) for i in range(self.num_softmax)]
-        x = th.concat(y, 1)
+            x = th.concat([x, mask], 1)
+        x = self.actor(x)
+        if self.agent_helper.config["graph_mode"]:
+            x = x * mask
         return x
