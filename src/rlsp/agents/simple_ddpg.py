@@ -24,6 +24,7 @@ from src.rlsp.agents.agent_helper import AgentHelper
 from src.rlsp.agents.buffer import GraphReplayBuffer
 from src.rlsp.agents.main import create_environment
 from src.rlsp.agents.models import Actor, QNetwork
+from src.rlsp.utils.result_writer import ResultsWriter
 
 
 def torch_stack_to_graph_batch(obs: Dict) -> Batch:
@@ -165,6 +166,7 @@ class SimpleDDPG:
 
     def _writer_setup(self):
         self.writer = SummaryWriter(f"runs/{self.agent_helper.test}")
+        self.result_writer = ResultsWriter(self.agent_helper.config_dir+"rewards.csv")
 
         """ 
         TODO: Add hyperparameter logging
@@ -259,6 +261,7 @@ class SimpleDDPG:
                 tqdm.write(f"global_step={global_step}, episodic_return={ep_reward}")
             self.writer.add_scalar("charts/episodic_return", infos["episode"]["r"], global_step)
             self.writer.add_scalar("charts/episodic_length", infos["episode"]["l"], global_step)
+            self.result_writer.write_row({"r": infos["episode"]["r"]})
         
         return new_best_reward
     
@@ -326,6 +329,7 @@ class SimpleDDPG:
 
         self.env.close()
         self.writer.close()
+        self.result_writer.close()
     
     @th.no_grad()
     def predict(self, obs):

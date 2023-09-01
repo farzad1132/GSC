@@ -56,13 +56,13 @@ class GNNEmbedder(nn.Module):
 class QNetwork(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
         super().__init__()
-        self.agent_helper = agent_helper
+        self.graph_mode = agent_helper.config["graph_mode"]
         hidden_layers = list(agent_helper.config["critic_hidden_layer_nodes"])
         obs_space = agent_helper.env.observation_space
         action_space = agent_helper.env.action_space
 
         ## Feature extractor
-        if self.agent_helper.config["graph_mode"] is True:
+        if self.graph_mode is True:
             feature_size = int(agent_helper.config["GNN_features"])
             num_layers = int(agent_helper.config["GNN_num_layers"])
             num_iter = int(agent_helper.config["GNN_num_iter"])
@@ -85,7 +85,7 @@ class QNetwork(nn.Module):
 
 
     def forward(self, x, a):
-        if self.agent_helper.config["graph_mode"]:
+        if self.graph_mode:
             mask = x.mask
             x = self.embedder(x.x, x.edge_index, x.batch)
             x = th.cat([x, mask], 1)
@@ -96,12 +96,12 @@ class QNetwork(nn.Module):
 class Actor(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
         super().__init__()
-        self.agent_helper = agent_helper
+        self.graph_mode = agent_helper.config["graph_mode"]
         hidden_layers = list(agent_helper.config["actor_hidden_layer_nodes"])
         obs_space = agent_helper.env.observation_space
         action_space = agent_helper.env.action_space
 
-        if self.agent_helper.config["graph_mode"]:
+        if self.graph_mode:
             feature_size = int(agent_helper.config["GNN_features"])
             num_layers = int(agent_helper.config["GNN_num_layers"])
             num_iter = int(agent_helper.config["GNN_num_iter"])
@@ -145,11 +145,11 @@ class Actor(nn.Module):
         return self.low + (0.5 * (scaled_action + 1.0) * (self.high - self.low))
 
     def forward(self, x):
-        if self.agent_helper.config["graph_mode"]:
+        if self.graph_mode:
             mask = x.mask
             x = self.embedder(x.x, x.edge_index, x.batch)
             x = th.concat([x, mask], 1)
         x = self.actor(x)
-        if self.agent_helper.config["graph_mode"]:
+        if self.graph_mode:
             x = x * mask
         return x
