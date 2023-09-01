@@ -93,7 +93,6 @@ def make_env(agent_helper: AgentHelper, seed, idx, capture_video, run_name):
 def simple_make_env(agent_helper: AgentHelper):
     env = create_environment(agent_helper)
     agent_helper.env = env
-    # TODO: check between default auto reset and auto reset with seed
     #env = gym.wrappers.AutoResetWrapper(env)
     env = AutoResetWithSeed(env, agent_helper.seed)
     env = gym.wrappers.RecordEpisodeStatistics(env)
@@ -307,7 +306,6 @@ class SimpleDDPG:
             # ALGO LOGIC: training.
             # Train frequency: (1, "episode")
             if global_step % self.agent_helper.episode_steps == self.agent_helper.episode_steps-1:
-                # TODO: train/test on/off for models
                 if global_step >= self.agent_helper.config['nb_steps_warmup_critic']-1:
                     self.actor.train()
 

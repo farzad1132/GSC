@@ -62,7 +62,6 @@ class GymEnv(gym.Env):
         """ self.np_random = np.random.RandomState()
         self.seed(seed) """
 
-        # TODO: change this Gen type 4
         self.network_diameter = 15
         self.sfc_list = get_sfc(service_file)
         self.sf_list = get_sf(service_file)

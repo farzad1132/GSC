@@ -52,7 +52,6 @@ class GNNEmbedder(nn.Module):
                 else:
                     x = nn.functional.relu(x)
 
-# TODO: This network doesn't use any feature extractor. See SB3 implementation for more insight
 class QNetwork(nn.Module):
     def __init__(self, agent_helper: AgentHelper):
         super().__init__()
