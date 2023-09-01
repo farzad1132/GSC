@@ -1,3 +1,4 @@
+import pickle
 import random
 from typing import Callable
 
@@ -67,21 +68,15 @@ def cli(agent_config, network, service, sim_config, scheduler, episodes, seed, t
 
     agent = SimpleDDPG(agent_helper)
 
-    ### Training ###
-    """ eval_env = Monitor(GymEnv(
-        agent_config=agent_helper.config,
-        simulator=create_simulator(agent_helper),
-        network_file=agent_helper.network_path,
-        service_file=agent_helper.service_path,
-        seed=seed,
-        sim_seed=sim_seed
-    )) """
-
     agent.train(episodes)
 
-    ### Testing ###
-    # TODO: Refactor testing codes
+    # Saving actor and agent_helper
+    th.save(agent.actor, agent_helper.config_dir+"trained_actor.pt")
+    del agent_helper.env
+    with open(agent_helper.config_dir+"agent_helper.obj", "wb") as f:
+        pickle.dump(agent_helper, f)
 
+    ### Testing ###
     if agent_helper.test == True:
         # if test after training (append_test) test for 1 episodes
         agent_helper.episodes = 1
