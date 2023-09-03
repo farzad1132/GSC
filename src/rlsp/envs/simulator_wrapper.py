@@ -207,11 +207,20 @@ class SimulatorWrapper:
         
         ingress_traffic = np.clip(ingress_traffic / (np.max(ingress_traffic)+1e-3), 0, 1)
 
+        if 'node_cap' in self.observations_space:
+            node_cap = np.array([0.0 for v in state.network['nodes']], dtype=np.float32)
+            for node in state.network["nodes"]:
+                node_cap[self.node_map[node['id']]] = node["resource"]
+            
+            node_cap = np.clip(node_cap / (np.max(node_cap)+1e-3), 0, 1)
+
         nn_input_state = np.array([])
         if 'ingress_traffic' in self.observations_space:
             nn_input_state = np.concatenate((nn_input_state, ingress_traffic,), axis=None)
         if 'node_load' in self.observations_space:
             nn_input_state = np.concatenate((nn_input_state, nodes_utilization,), axis=None)
+        if "node_cap" in self.observations_space:
+            nn_input_state = np.concatenate((nn_input_state, node_cap), axis=None)
 
         # log RL state to file during testing. need instance check because it requires the simulator writer
         if isinstance(self.simulator, Simulator) and self.simulator.test_mode:
