@@ -14,7 +14,6 @@ import torch as th
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-import wandb
 from stable_baselines3.common.buffers import DictReplayBuffer, ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 from torch_geometric.data import Batch, Data
