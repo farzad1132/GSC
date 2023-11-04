@@ -1,14 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Gym envs representing the coordination-simulation from
-REAL NFV https://github.com/RealVNF/coordination-simulation
 
-
-For help on "Implementing New Environments" see:
-https://github.com/openai/gym/blob/master/gym/core.py
-https://github.com/rll/rllab/blob/master/docs/user/implement_env.rst
-
-"""
 import inspect
 import logging
 import os

@@ -11,9 +11,7 @@ from src.rlsp.utils.constants import SUPPORTED_OBJECTIVES
 from src.rlsp.utils.experiment_result import ExperimentResult, LiteralStr
 from src.rlsp.utils.util_functions import create_simulator
 from src.rlsp.agents.agent_helper import AgentHelper
-#from rlsp.agents.rlsp_ddpg import DDPG
 from src.rlsp.envs.gym_env import GymEnv
-#from src.rlsp.agents.rlsp_sac import SAC_Agent
 import gym
 from gym.utils.env_checker import check_env
 import numpy as np

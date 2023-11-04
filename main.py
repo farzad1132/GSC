@@ -7,37 +7,10 @@ import numpy as np
 import torch as th
 
 from src.rlsp.agents.main import DATETIME, create_simulator, setup, setup_files
-from src.rlsp.agents.rlsp_torch_ddpg import TorchDDPG
 from src.rlsp.agents.simple_ddpg import SimpleDDPG
 from src.rlsp.envs.gym_env import GymEnv
 
 from src.rlsp.utils.experiment_result import ExperimentResult; np.set_printoptions(suppress=True, precision=3)
-
-def linear_schedule(initial_value: float) -> Callable[[float], float]:
-    """
-    Linear learning rate schedule.
-
-    :param initial_value: Initial learning rate.
-    :return: schedule that computes
-      current learning rate depending on remaining progress
-    """
-    def func(progress_remaining: float) -> float:
-        """
-        Progress will decrease from 1 (beginning) to 0.
-
-        :param progress_remaining:
-        :return: current learning rate
-        """
-        return progress_remaining * initial_value
-
-    return func
-
-def exp_decay(init: float = 1e-2, end: float = 1e-3, decay: float = 0.25):
-    def func(progress: float):
-        lr = end + (init-end)*np.exp(-(1-progress)/decay)
-        return lr
-    
-    return func
 
 
 @click.command(context_settings=dict(help_option_names=['-h', '--help']))
@@ -109,12 +82,6 @@ if __name__ == "__main__":
     sim_config = 'configs/config/simulator/sample_config.yaml'
     scheduler = 'configs/config/scheduler.yaml'
     # sim_config = 'configs/config/simulator/det-mmp-arrival7-3_det-size0_dur100_no_traffic_prediction.yaml'
-
-    # training for 1 episode
-    # cli([agent_config, network, service, sim_config, '1', '-v'])
-
-    # testing for 4 episode
-    # cli([agent_config, network, service, sim_config, '1', '-t', '2021-01-07_13-00-43_seed1234'])
 
     # training & testing for 1 episodes
     cli([agent_config, network, service, sim_config, scheduler, '40', '--append-test'])
