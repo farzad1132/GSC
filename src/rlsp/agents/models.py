@@ -1,7 +1,7 @@
 import numpy as np
 import torch as th
 import torch.nn as nn
-from torch_geometric.nn import MLP, GATConv, GCNConv
+from torch_geometric.nn import MLP, GATv2Conv
 from torch_geometric.nn.pool import global_mean_pool
 
 from src.rlsp.agents.agent_helper import AgentHelper
@@ -19,11 +19,11 @@ class GNNEmbedder(nn.Module):
         self.num_layers = num_layers
         self.dropout = dropout
 
-        self.encoder = GATConv(input_dim, hidden_dim, aggr=aggr)
+        self.encoder = GATv2Conv(input_dim, hidden_dim, aggr=aggr)
 
         self.process = nn.ModuleList([])
         for _ in range(num_layers-1):
-            self.process.append(GATConv(hidden_dim, hidden_dim, aggr=aggr))
+            self.process.append(GATv2Conv(hidden_dim, hidden_dim, aggr=aggr))
         
         #self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_dim) for _ in range(num_layers)])
 
