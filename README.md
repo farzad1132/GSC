@@ -1,6 +1,6 @@
 # GSC: Generalizable Service Coordination
 
-Source code for the **GSC: Generalizable Service Coordination** paper. GSC performs coordination of services consisting of inter-dependent components in multi-cloud networks. Service coordination comprises the placement and scalability of components and scheduling incoming traffic requests for services between deployed instances.
+Official implementation of **[GSC: Generalizable Service Coordination](https://arxiv.org/abs/2311.02657)** paper. GSC performs coordination of services consisting of inter-dependent components in multi-cloud networks. Service coordination comprises the placement and scalability of components and scheduling incoming traffic requests for services between deployed instances.
 
 ## Setup
 This code has been tested using **Python 3.8.6**. We recommend installing the required packages (specified by ***requirements.txt*** file) inside a **virtual environment**. 
@@ -14,6 +14,16 @@ GSC can be configured using these config files:
 - scheduler config: Determines how aspects of the network should change during the training phase.
 
 ## Citation
+```
+@misc{mohammadi2023gsc,
+      title={GSC: Generalizable Service Coordination}, 
+      author={Farzad Mohammadi and Vahid Shah-Mansouri},
+      year={2023},
+      eprint={2311.02657},
+      archivePrefix={arXiv},
+      primaryClass={cs.DC}
+}
+```
 
 ## Acknowledgement
 We sincerely thank the developers of the [DeepCoord](https://github.com/RealVNF/DeepCoord) and [coord-sim](https://github.com/RealVNF/coord-sim) projects for making the source code of their efforts available, which immensely helped us in the development of GSC.
