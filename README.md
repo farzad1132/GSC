@@ -1,6 +1,6 @@
 # GSC: Generalizable Service Coordination
 
-Official implementation of **[GSC: Generalizable Service Coordination](https://arxiv.org/abs/2311.02657)** paper. GSC performs coordination of services consisting of inter-dependent components in multi-cloud networks. Service coordination comprises the placement and scalability of components and scheduling incoming traffic requests for services between deployed instances.
+Official implementation of **[GSC: Generalizable Service Coordination](https://arxiv.org/abs/2311.02657)**. GSC performs coordination of services consisting of inter-dependent components in multi-cloud networks. Service coordination comprises the placement and scalability of components and scheduling incoming traffic requests for services between deployed instances.
 
 ## Setup
 This code has been tested using **Python 3.8.6**. We recommend installing the required packages (specified by ***requirements.txt*** file) inside a **virtual environment**. 
